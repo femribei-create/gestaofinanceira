@@ -4,9 +4,8 @@
  */
 
 import { drizzle } from "drizzle-orm/mysql2";
-import { categories, accounts, classificationRules } from "../drizzle/schema";
-
-const OWNER_ID = 1; // ID do usuário owner
+import { categories, accounts, classificationRules, users } from "../drizzle/schema";
+import { eq } from "drizzle-orm";
 
 async function seed() {
   if (!process.env.DATABASE_URL) {
@@ -17,6 +16,23 @@ async function seed() {
   const db = drizzle(process.env.DATABASE_URL);
 
   console.log("🌱 Iniciando seed do banco de dados...");
+
+  // Buscar o usuário padrão do Railway
+  const DEFAULT_OPEN_ID = "railway-default-user";
+  const existingUsers = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, DEFAULT_OPEN_ID))
+    .limit(1);
+
+  if (existingUsers.length === 0) {
+    console.error("❌ Usuário padrão não encontrado. O sistema deve criar automaticamente ao iniciar.");
+    console.error("   Tente acessar o sistema primeiro para criar o usuário.");
+    process.exit(1);
+  }
+
+  const OWNER_ID = existingUsers[0]!.id;
+  console.log(`👤 Usando usuário padrão (ID: ${OWNER_ID})`);
 
   // 1. Inserir categorias empresariais
   const businessCategories = [
@@ -160,9 +176,6 @@ async function seed() {
   
   process.exit(0);
 }
-
-// Importar eq do drizzle-orm
-import { eq } from "drizzle-orm";
 
 seed().catch((error) => {
   console.error("❌ Erro no seed:", error);
