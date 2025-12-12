@@ -16,6 +16,24 @@ import { getDefaultRules } from "../classification";
 
 export const setupRouter = router({
   /**
+   * Verifica se o sistema já foi inicializado
+   */
+  checkSetupStatus: protectedProcedure
+    .query(async ({ ctx }) => {
+      const userId = ctx.user.id;
+      
+      const categories = await getUserCategories(userId);
+      const accounts = await getUserAccounts(userId);
+      const rules = await getUserClassificationRules(userId);
+      
+      return {
+        isInitialized: categories.length > 0 || accounts.length > 0,
+        categoriesCount: categories.length,
+        accountsCount: accounts.length,
+        rulesCount: rules.length,
+      };
+    }),
+  /**
    * Inicializa categorias padrão do usuário
    */
   initializeCategories: protectedProcedure
