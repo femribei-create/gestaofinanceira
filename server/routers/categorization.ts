@@ -100,6 +100,8 @@ export const categorizationRouter = router({
         categoryId: z.number(),
         transactionType: z.enum(["income", "expense"]),
         priority: z.number().default(0),
+        minAmount: z.number().optional(), // Novo
+        maxAmount: z.number().optional(), // Novo
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -110,7 +112,9 @@ export const categorizationRouter = router({
         input.matchType,
         input.categoryId,
         input.transactionType,
-        input.priority
+        input.priority,
+        input.minAmount,
+        input.maxAmount
       );
       return { success: true };
     }),
@@ -127,6 +131,8 @@ export const categorizationRouter = router({
         categoryId: z.number(),
         transactionType: z.enum(["income", "expense"]),
         priority: z.number().default(0),
+        minAmount: z.number().optional(), // Novo
+        maxAmount: z.number().optional(), // Novo
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -137,7 +143,9 @@ export const categorizationRouter = router({
         input.matchType,
         input.categoryId,
         input.transactionType,
-        input.priority
+        input.priority,
+        input.minAmount,
+        input.maxAmount
       );
       return { success: true };
     }),
