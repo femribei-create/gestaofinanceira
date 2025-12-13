@@ -122,6 +122,10 @@ export const classificationRules = mysqlTable("classificationRules", {
   matchType: mysqlEnum("matchType", ["contains", "starts_with", "ends_with", "exact"]).notNull(),
   accountId: int("accountId").references(() => accounts.id, { onDelete: "cascade" }), // Opcional: aplicar apenas a uma conta
   
+  // Condições de VALOR (Novo)
+  minAmount: int("minAmount"), // Em centavos, opcional
+  maxAmount: int("maxAmount"), // Em centavos, opcional
+  
   // Ação da regra
   categoryId: int("categoryId").notNull().references(() => categories.id, { onDelete: "cascade" }),
   transactionType: mysqlEnum("transactionType", ["income", "expense"]).notNull(),
