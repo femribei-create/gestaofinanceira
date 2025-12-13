@@ -1,4 +1,3 @@
-import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
@@ -13,8 +12,25 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useLocation } from "wouter";
+import { useEffect } from "react";
 
 export default function Home() {
+  const [, setLocation] = useLocation();
+  
+  // Verificar se o sistema foi inicializado
+  const { data: setupStatus, isLoading: loadingSetup } = trpc.setup.checkSetupStatus.useQuery();
+  
+  // Redirecionar para setup se não inicializado
+  useEffect(() => {
+    if (loadingSetup) return;
+    if (!setupStatus) return;
+    
+    if (!setupStatus.isInitialized) {
+      setLocation("/setup");
+    }
+  }, [setupStatus, loadingSetup, setLocation]);
+  
   // Buscar dados do dashboard
   const { data: accounts, isLoading: loadingAccounts } = trpc.setup.listAccounts.useQuery();
   const { data: dreData, isLoading: loadingDRE } = trpc.dre.getMonthlyDRE.useQuery({
