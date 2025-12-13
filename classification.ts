@@ -21,10 +21,12 @@ export interface ClassificationResult {
  */
 export async function applyRules(
   description: string,
+  amount: number,
   accountId: number,
   rules: ClassificationRule[]
 ): Promise<ClassificationResult | null> {
   const normalizedDesc = description.toLowerCase().trim();
+  const absAmount = Math.abs(amount); // Trabalhar com valor absoluto (ignora sinal negativo de despesa)
   
   for (const rule of rules) {
     // Verificar se a regra é específica para uma conta
@@ -32,6 +34,7 @@ export async function applyRules(
       continue;
     }
     
+    // VERIFICAÇÃO DE TEXTO
     const pattern = rule.pattern.toLowerCase().trim();
     let matches = false;
     
@@ -50,13 +53,32 @@ export async function applyRules(
         break;
     }
     
-    if (matches) {
-      return {
-        categoryId: rule.categoryId,
-        method: "rule",
-        confidence: 100, // Regras têm 100% de confiança
-      };
+    // Se o texto não bater, pula para a próxima regra
+    if (!matches) {
+      continue;
     }
+
+    // VERIFICAÇÃO DE VALOR (Nova funcionalidade)
+    // Se a regra tiver valor mínimo e o valor da transação for menor, pula
+    if (rule.minAmount !== null && rule.minAmount !== undefined) {
+      if (absAmount < rule.minAmount) {
+        continue;
+      }
+    }
+
+    // Se a regra tiver valor máximo e o valor da transação for maior, pula
+    if (rule.maxAmount !== null && rule.maxAmount !== undefined) {
+      if (absAmount > rule.maxAmount) {
+        continue;
+      }
+    }
+    
+    // Se chegou aqui, bateu texto E valor (se houver restrição de valor)
+    return {
+      categoryId: rule.categoryId,
+      method: "rule",
+      confidence: 100, // Regras têm 100% de confiança
+    };
   }
   
   return null;
@@ -164,7 +186,8 @@ export async function classifyTransaction(
   categories: Category[]
 ): Promise<ClassificationResult> {
   // 1. Tentar regras primeiro (mais confiável)
-  const ruleResult = await applyRules(transaction.description, accountId, rules);
+  // AGORA PASSAMOS O VALOR (AMOUNT) PARA VALIDAR REGRAS DE VALOR
+  const ruleResult = await applyRules(transaction.description, transaction.amount, accountId, rules);
   if (ruleResult) {
     return ruleResult;
   }
@@ -233,6 +256,8 @@ export function getDefaultRules(userId: number, categories: Map<string, number>)
   categoryId: number;
   transactionType: "income" | "expense";
   priority: number;
+  minAmount?: number;
+  maxAmount?: number;
 }> {
   const rules: Array<{
     userId: number;
@@ -241,6 +266,8 @@ export function getDefaultRules(userId: number, categories: Map<string, number>)
     categoryId: number;
     transactionType: "income" | "expense";
     priority: number;
+    minAmount?: number;
+    maxAmount?: number;
   }> = [];
   
   // Regra 1: TRANSFERÊNCIA RECEBIDA → PIX RECEBIDO CLIENTE
@@ -280,13 +307,6 @@ export function getDefaultRules(userId: number, categories: Map<string, number>)
       transactionType: "income",
       priority: 9,
     });
-  }
-  
-  // Regra 4: Conta SANGRIA → PIX DESAPEGO
-  const pixDesapegoId = categories.get("PIX DESAPEGO");
-  if (pixDesapegoId) {
-    // Esta regra será aplicada no nível de conta, não por descrição
-    // Será tratada no router
   }
   
   // Regra 5: Nomes de contas internas → TRANSF INTERNA
