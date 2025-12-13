@@ -1,8 +1,9 @@
 import { useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { Loader2, AlertCircle, CheckCircle2, Settings, Zap } from "lucide-react";
+import { Loader2, AlertCircle, Settings, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Categorization() {
@@ -67,8 +68,8 @@ export default function Categorization() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <DashboardLayout>
+      <div className="max-w-6xl mx-auto space-y-6 py-6">
         {/* Header */}
         <div>
           <h1 className="text-4xl font-bold text-gray-900">Categorização de Transações</h1>
@@ -306,6 +307,6 @@ export default function Categorization() {
           </Card>
         )}
       </div>
-    </div>
+    </DashboardLayout>
   );
 }
