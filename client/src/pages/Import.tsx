@@ -1,8 +1,9 @@
+import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Upload, FileText, AlertCircle, CheckCircle2, Loader2, ArrowUpCircle, ArrowDownCircle, Check, X } from "lucide-react";
+import { Upload, FileText, AlertCircle, CheckCircle2, Loader2, Check, X } from "lucide-react";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -142,8 +143,8 @@ export default function Import() {
   const totalToImport = uploadResult?.transactions.filter((t: any) => !t.isDuplicate).length + approvedDuplicates;
   
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <DashboardLayout>
+      <div className="max-w-6xl mx-auto space-y-6 py-6">
         <div>
           <h1 className="text-3xl font-bold">Importar Transações</h1>
           <p className="text-muted-foreground mt-1">
@@ -450,6 +451,6 @@ export default function Import() {
           </>
         )}
       </div>
-    </div>
+    </DashboardLayout>
   );
 }
