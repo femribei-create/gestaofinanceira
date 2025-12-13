@@ -73,4 +73,3 @@ function App() {
 }
 
 export default App;
-Configuração e Validação do Projeto de Gestão Financeira - Manus
