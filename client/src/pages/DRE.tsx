@@ -1,3 +1,4 @@
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
@@ -260,19 +261,21 @@ export default function DRE() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-muted-foreground">Carregando DRE...</p>
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-[calc(100vh-100px)]">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-muted-foreground">Carregando DRE...</p>
+          </div>
         </div>
-      </div>
+      </DashboardLayout>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-6xl mx-auto">
+      <DashboardLayout>
+        <div className="max-w-6xl mx-auto py-6">
           <Card className="border-red-200 bg-red-50">
             <CardHeader>
               <CardTitle className="text-red-700">Erro ao carregar DRE</CardTitle>
@@ -282,14 +285,14 @@ export default function DRE() {
             </CardHeader>
           </Card>
         </div>
-      </div>
+      </DashboardLayout>
     );
   }
 
   if (!dreData) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-6xl mx-auto">
+      <DashboardLayout>
+        <div className="max-w-6xl mx-auto py-6">
           <Card>
             <CardHeader>
               <CardTitle>Nenhum dado disponível</CardTitle>
@@ -299,13 +302,13 @@ export default function DRE() {
             </CardHeader>
           </Card>
         </div>
-      </div>
+      </DashboardLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <DashboardLayout>
+      <div className="max-w-7xl mx-auto space-y-6 py-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -418,6 +421,6 @@ export default function DRE() {
           </div>
         )}
       </div>
-    </div>
+    </DashboardLayout>
   );
 }
