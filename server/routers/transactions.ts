@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-// Importamos getDb do engine para garantir que usamos a mesma conexão configurada
+// Importamos getDb do engine
 import { getDb } from "../categorization.engine"; 
-import { transactions } from "../drizzle/schema";
+// CORREÇÃO AQUI: Adicionamos mais um "../" para chegar na raiz
+import { transactions } from "../../drizzle/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 
 export const transactionsRouter = router({
