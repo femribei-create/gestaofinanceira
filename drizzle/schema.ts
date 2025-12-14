@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, index, unique } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, index, unique } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -19,16 +19,16 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 /**
- * Contas bancárias (Itaú, Nubank PJ, Nubank Pessoal, Inter, Cartões)
+ * Contas bancárias
  */
 export const accounts = mysqlTable("accounts", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  name: varchar("name", { length: 255 }).notNull(), // Ex: "Itaú Empresarial", "Nubank PJ"
+  name: varchar("name", { length: 255 }).notNull(),
   accountType: mysqlEnum("accountType", ["bank", "credit_card"]).notNull(),
   businessType: mysqlEnum("businessType", ["personal", "business"]).notNull(),
-  initialBalance: int("initialBalance").default(0).notNull(), // Em centavos
-  currentBalance: int("currentBalance").default(0).notNull(), // Em centavos
+  initialBalance: int("initialBalance").default(0).notNull(),
+  currentBalance: int("currentBalance").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
@@ -39,7 +39,7 @@ export type Account = typeof accounts.$inferSelect;
 export type InsertAccount = typeof accounts.$inferInsert;
 
 /**
- * Categorias de transações (Pessoal e Empresarial)
+ * Categorias
  */
 export const categories = mysqlTable("categories", {
   id: int("id").autoincrement().primaryKey(),
@@ -67,33 +67,36 @@ export const transactions = mysqlTable("transactions", {
   
   // Dados da transação
   description: text("description").notNull(),
-  amount: int("amount").notNull(), // Em centavos (positivo = receita, negativo = despesa)
+  amount: int("amount").notNull(), 
   transactionType: mysqlEnum("transactionType", ["income", "expense"]).notNull(),
   
   // Datas
-  purchaseDate: timestamp("purchaseDate").notNull(), // Data da compra
-  paymentDate: timestamp("paymentDate").notNull(), // Data do pagamento
+  purchaseDate: timestamp("purchaseDate").notNull(),
+  paymentDate: timestamp("paymentDate").notNull(),
   
   // Informações de parcela
   isInstallment: boolean("isInstallment").default(false).notNull(),
-  installmentNumber: int("installmentNumber"), // Parcela atual (ex: 3)
-  installmentTotal: int("installmentTotal"), // Total de parcelas (ex: 6)
-  originalPurchaseDate: timestamp("originalPurchaseDate"), // Data original da compra (para parcelas)
+  installmentNumber: int("installmentNumber"),
+  installmentTotal: int("installmentTotal"),
+  originalPurchaseDate: timestamp("originalPurchaseDate"),
   
   // Origem e classificação
   source: mysqlEnum("source", ["manual", "csv", "ofx"]).notNull(),
-  sourceFile: varchar("sourceFile", { length: 255 }), // Nome do arquivo importado
+  sourceFile: varchar("sourceFile", { length: 255 }),
   
   // Classificação automática
   suggestedCategoryId: int("suggestedCategoryId").references(() => categories.id, { onDelete: "set null" }),
   classificationMethod: mysqlEnum("classificationMethod", ["rule", "ai", "manual", "history"]),
   
-  // Controle de duplicatas
+  // Controle de duplicatas e status
   isDuplicate: boolean("isDuplicate").default(false).notNull(),
   duplicateStatus: mysqlEnum("duplicateStatus", ["pending", "approved", "rejected"]).default("pending"),
   
-  // Identificadores únicos (para OFX)
-  fitId: varchar("fitId", { length: 255 }), // ID único do OFX
+  // NOVO CAMPO: Ignorar transação nas somas
+  isIgnored: boolean("isIgnored").default(false).notNull(),
+  
+  // Identificadores únicos
+  fitId: varchar("fitId", { length: 255 }),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -111,26 +114,21 @@ export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = typeof transactions.$inferInsert;
 
 /**
- * Regras de classificação automática
+ * Regras de classificação
  */
 export const classificationRules = mysqlTable("classificationRules", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   
-  // Condições da regra
-  pattern: text("pattern").notNull(), // Padrão a buscar na descrição
+  pattern: text("pattern").notNull(),
   matchType: mysqlEnum("matchType", ["contains", "starts_with", "ends_with", "exact"]).notNull(),
-  accountId: int("accountId").references(() => accounts.id, { onDelete: "cascade" }), // Opcional: aplicar apenas a uma conta
+  accountId: int("accountId").references(() => accounts.id, { onDelete: "cascade" }),
   
-  // Condições de VALOR (Novo)
-  minAmount: int("minAmount"), // Em centavos, opcional
-  maxAmount: int("maxAmount"), // Em centavos, opcional
+  minAmount: int("minAmount"),
+  maxAmount: int("maxAmount"),
   
-  // Ação da regra
   categoryId: int("categoryId").notNull().references(() => categories.id, { onDelete: "cascade" }),
   transactionType: mysqlEnum("transactionType", ["income", "expense"]).notNull(),
-  
-  // Prioridade (maior = executa primeiro)
   priority: int("priority").default(0).notNull(),
   
   isActive: boolean("isActive").default(true).notNull(),
@@ -144,7 +142,7 @@ export type ClassificationRule = typeof classificationRules.$inferSelect;
 export type InsertClassificationRule = typeof classificationRules.$inferInsert;
 
 /**
- * Histórico de aprendizado de classificação (para IA)
+ * Histórico de aprendizado
  */
 export const classificationHistory = mysqlTable("classificationHistory", {
   id: int("id").autoincrement().primaryKey(),
@@ -152,10 +150,7 @@ export const classificationHistory = mysqlTable("classificationHistory", {
   
   description: text("description").notNull(),
   categoryId: int("categoryId").notNull().references(() => categories.id, { onDelete: "cascade" }),
-  
-  // Contador de vezes que essa descrição foi classificada nessa categoria
   count: int("count").default(1).notNull(),
-  
   lastUsed: timestamp("lastUsed").defaultNow().notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
@@ -166,23 +161,16 @@ export type ClassificationHistory = typeof classificationHistory.$inferSelect;
 export type InsertClassificationHistory = typeof classificationHistory.$inferInsert;
 
 /**
- * Metas mensais por categoria
+ * Metas mensais
  */
 export const monthlyGoals = mysqlTable("monthlyGoals", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   categoryId: int("categoryId").notNull().references(() => categories.id, { onDelete: "cascade" }),
-  
-  // Período da meta
   year: int("year").notNull(),
-  month: int("month").notNull(), // 1-12
-  
-  // Valor da meta (em centavos)
+  month: int("month").notNull(),
   goalAmount: int("goalAmount").notNull(),
-  
-  // Alertas
   alertSent70: boolean("alertSent70").default(false).notNull(),
-  
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
@@ -195,17 +183,14 @@ export type MonthlyGoal = typeof monthlyGoals.$inferSelect;
 export type InsertMonthlyGoal = typeof monthlyGoals.$inferInsert;
 
 /**
- * Dados de faturamento (importados do CSV)
+ * Faturamento (Receita Bruta)
  */
 export const revenueData = mysqlTable("revenueData", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  
-  // Período
   year: int("year").notNull(),
-  month: int("month").notNull(), // 1-12
+  month: int("month").notNull(),
   
-  // Valores de faturamento (em centavos)
   creditCash: int("creditCash").default(0).notNull(),
   credit2x: int("credit2x").default(0).notNull(),
   credit3x: int("credit3x").default(0).notNull(),
@@ -229,20 +214,15 @@ export type RevenueData = typeof revenueData.$inferSelect;
 export type InsertRevenueData = typeof revenueData.$inferInsert;
 
 /**
- * Configurações de fechamento de cartão
+ * Datas de fechamento de cartão
  */
 export const cardClosingDates = mysqlTable("cardClosingDates", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   accountId: int("accountId").notNull().references(() => accounts.id, { onDelete: "cascade" }),
-  
-  // Período
   year: int("year").notNull(),
-  month: int("month").notNull(), // 1-12
-  
-  // Data de fechamento
+  month: int("month").notNull(),
   closingDate: timestamp("closingDate").notNull(),
-  
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   userIdIdx: index("cardClosingDates_userId_idx").on(table.userId),
