@@ -1,155 +1,119 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-// Importamos getDb direto da fonte
-import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
-import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
+import { router, publicProcedure } from "../trpc";
+import { transactions } from "@/db/schema"; 
+import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 
 export const transactionsRouter = router({
-  /**
-   * Listar transações com filtros
-   */
-  list: protectedProcedure
+  // 1. LISTAGEM COM FILTROS AVANÇADOS
+  list: publicProcedure
     .input(
       z.object({
-        search: z.string().optional(),
-        accountId: z.number().optional(),
-        categoryId: z.number().optional(),
-        transactionType: z.string().optional(),
-        startDate: z.string().optional(),
-        endDate: z.string().optional(),
-        isDuplicate: z.boolean().optional(),
+        startDate: z.date().optional(),
+        endDate: z.date().optional(),
+        accountId: z.string().optional(), // Filtro por conta (Ex: NuPJ)
+        categoryId: z.string().optional(), // Filtro por categoria
+        // "active" = Padrão (não ignoradas), "ignored" = Lixeira, "all" = Tudo
+        status: z.enum(["active", "ignored", "all"]).default("active"), 
       })
     )
     .query(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) return [];
+      const { db } = ctx;
+      
+      // Array para acumular as condições do WHERE dinamicamente
+      const whereConditions = [];
 
-      const conditions = [eq(transactions.userId, ctx.user.id)];
-
-      // Filtro de Texto
-      if (input.search) {
-        conditions.push(sql`LOWER(${transactions.description}) LIKE ${`%${input.search.toLowerCase()}%`}`);
-      }
-
-      // Filtros de Conta e Categoria
-      if (input.accountId) {
-        conditions.push(eq(transactions.accountId, input.accountId));
-      }
-      if (input.categoryId) {
-        conditions.push(eq(transactions.categoryId, input.categoryId));
-      }
-
-      // Filtro de Tipo (Receita/Despesa)
-      if (input.transactionType === "income" || input.transactionType === "expense") {
-        conditions.push(eq(transactions.transactionType, input.transactionType));
-      }
-
-      // Filtro de Data
+      // --- Filtro de Datas ---
       if (input.startDate) {
-        conditions.push(gte(transactions.purchaseDate, new Date(input.startDate)));
+        whereConditions.push(gte(transactions.date, input.startDate));
       }
       if (input.endDate) {
-        conditions.push(lte(transactions.purchaseDate, new Date(input.endDate)));
+        whereConditions.push(lte(transactions.date, input.endDate));
       }
 
-      // Filtro de Duplicatas (se não especificado, mostra tudo)
-      if (input.isDuplicate !== undefined) {
-         conditions.push(eq(transactions.isDuplicate, input.isDuplicate));
+      // --- Filtro de Conta e Categoria ---
+      // Verificamos se existe E se não é "all" (caso venha do frontend)
+      if (input.accountId && input.accountId !== "all") {
+        whereConditions.push(eq(transactions.accountId, input.accountId));
+      }
+      if (input.categoryId && input.categoryId !== "all") {
+        whereConditions.push(eq(transactions.categoryId, input.categoryId));
       }
 
-      return await db
+      // --- Filtro de Status (Ignorar/Lixeira) ---
+      if (input.status === "active") {
+        // Mostra apenas as que NÃO foram ignoradas
+        whereConditions.push(eq(transactions.isIgnored, false));
+      } else if (input.status === "ignored") {
+        // Mostra APENAS as ignoradas (Lixeira)
+        whereConditions.push(eq(transactions.isIgnored, true));
+      }
+      // Se for "all", não adicionamos filtro, retornando ambas.
+
+      return db
         .select()
         .from(transactions)
-        .where(and(...conditions))
-        .orderBy(desc(transactions.purchaseDate));
+        .where(and(...whereConditions)) // Espalha as condições no AND
+        .orderBy(desc(transactions.date), desc(transactions.createdAt)); // Ordena por data e depois criação
     }),
 
-  /**
-   * Atualizar Categoria
-   */
-  updateCategory: protectedProcedure
+  // 2. CRIAR TRANSAÇÃO MANUAL
+  create: publicProcedure
     .input(
       z.object({
-        transactionId: z.number(),
-        categoryId: z.number(),
+        date: z.date(),
+        amount: z.number(),
+        description: z.string(),
+        accountId: z.string(),
+        categoryId: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("Database error");
-
-      await db
-        .update(transactions)
-        .set({
-          categoryId: input.categoryId,
-          classificationMethod: "manual",
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(transactions.id, input.transactionId),
-            eq(transactions.userId, ctx.user.id)
-          )
-        );
-
+      const { db } = ctx;
+      await db.insert(transactions).values({
+        date: input.date,
+        amount: input.amount, // Lembre-se: banco salva em centavos (integer) ou decimal, dependendo da sua config. Aqui assume que já vem correto.
+        description: input.description,
+        accountId: input.accountId,
+        categoryId: input.categoryId,
+        isIgnored: false, // Padrão
+      });
       return { success: true };
     }),
 
-  /**
-   * Alternar status de ignorar (Eye Off/On)
-   */
-  toggleIgnore: protectedProcedure
-    .input(z.object({ transactionId: z.number() }))
+  // 3. ALTERNAR IGNORAR (Correção do bug undefined aplicada)
+  toggleIgnore: publicProcedure
+    .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("Database error");
+      const { db } = ctx;
 
-      // ---- CORREÇÃO AQUI ----
-      // Usamos db.select()... que é mais robusto que db.query... neste caso
-      const transactionResults = await db
+      // Busca segura usando select + limit em vez de query.findFirst
+      const transaction = await db
         .select()
         .from(transactions)
-        .where(and(eq(transactions.id, input.transactionId), eq(transactions.userId, ctx.user.id)))
+        .where(eq(transactions.id, input.id))
         .limit(1);
 
-      const transaction = transactionResults[0];
-      // -----------------------
+      const target = transaction[0];
 
-      if (!transaction) throw new Error("Transação não encontrada");
+      if (!target) {
+        throw new Error("Transação não encontrada");
+      }
 
-      // Inverter estado
-      const newState = !transaction.isIgnored;
-
+      // Inverte o valor atual
       await db
         .update(transactions)
-        .set({
-          isIgnored: newState,
-          updatedAt: new Date()
-        })
-        .where(eq(transactions.id, input.transactionId));
+        .set({ isIgnored: !target.isIgnored })
+        .where(eq(transactions.id, input.id));
 
-      return { success: true, isIgnored: newState };
+      return { success: true, newStatus: !target.isIgnored };
     }),
 
-  /**
-   * Deletar Transação permanentemente
-   */
-  delete: protectedProcedure
-    .input(z.object({ transactionId: z.number() }))
+  // 4. DELETAR (Permanente)
+  delete: publicProcedure
+    .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("Database error");
-
-      await db
-        .delete(transactions)
-        .where(
-          and(
-            eq(transactions.id, input.transactionId),
-            eq(transactions.userId, ctx.user.id)
-          )
-        );
-
+      const { db } = ctx;
+      await db.delete(transactions).where(eq(transactions.id, input.id));
       return { success: true };
     }),
 });
