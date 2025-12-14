@@ -1,115 +1,150 @@
-/**
- * tRPC Router para gerenciamento de transações
- */
-
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import {
-  getUserTransactions,
-  updateTransaction,
-  deleteTransaction,
-  upsertClassificationHistory,
-} from "../db";
+// Importamos getDb do engine para garantir que usamos a mesma conexão configurada
+import { getDb } from "../categorization.engine"; 
+import { transactions } from "../drizzle/schema";
+import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 
 export const transactionsRouter = router({
   /**
-   * Lista transações do usuário com filtros
+   * Listar transações com filtros
    */
   list: protectedProcedure
-    .input(z.object({
-      search: z.string().optional(), // Busca por texto na descrição
-      accountId: z.number().optional(),
-      categoryId: z.number().optional(),
-      startDate: z.string().optional(), // ISO string
-      endDate: z.string().optional(), // ISO string
-      transactionType: z.enum(["income", "expense"]).optional(),
-      isDuplicate: z.boolean().optional(),
-    }))
+    .input(
+      z.object({
+        search: z.string().optional(),
+        accountId: z.number().optional(),
+        categoryId: z.number().optional(),
+        transactionType: z.string().optional(),
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
+        isDuplicate: z.boolean().optional(),
+      })
+    )
     .query(async ({ ctx, input }) => {
-      const userId = ctx.user.id;
+      const db = await getDb();
+      if (!db) return [];
+
+      const conditions = [eq(transactions.userId, ctx.user.id)];
+
+      // Filtro de Texto
+      if (input.search) {
+        conditions.push(sql`LOWER(${transactions.description}) LIKE ${`%${input.search.toLowerCase()}%`}`);
+      }
+
+      // Filtros de Conta e Categoria
+      if (input.accountId) {
+        conditions.push(eq(transactions.accountId, input.accountId));
+      }
+      if (input.categoryId) {
+        conditions.push(eq(transactions.categoryId, input.categoryId));
+      }
+
+      // Filtro de Tipo (Receita/Despesa)
+      if (input.transactionType === "income" || input.transactionType === "expense") {
+        conditions.push(eq(transactions.transactionType, input.transactionType));
+      }
+
+      // Filtro de Data
+      if (input.startDate) {
+        conditions.push(gte(transactions.purchaseDate, new Date(input.startDate)));
+      }
+      if (input.endDate) {
+        conditions.push(lte(transactions.purchaseDate, new Date(input.endDate)));
+      }
       
-      const filters = {
-        search: input.search,
-        accountId: input.accountId,
-        categoryId: input.categoryId,
-        startDate: input.startDate ? new Date(input.startDate) : undefined,
-        endDate: input.endDate ? new Date(input.endDate) : undefined,
-        transactionType: input.transactionType,
-        isDuplicate: input.isDuplicate,
-      };
-      
-      const transactions = await getUserTransactions(userId, filters);
-      
-      return transactions;
+      // Filtro de Duplicatas (se não especificado, mostra tudo)
+      if (input.isDuplicate !== undefined) {
+         conditions.push(eq(transactions.isDuplicate, input.isDuplicate));
+      }
+
+      return await db
+        .select()
+        .from(transactions)
+        .where(and(...conditions))
+        .orderBy(desc(transactions.purchaseDate));
     }),
-  
+
   /**
-   * Atualiza categoria de uma transação
-   * Também registra no histórico para aprendizado
+   * Atualizar Categoria (e mudar método para manual)
    */
   updateCategory: protectedProcedure
-    .input(z.object({
-      transactionId: z.number(),
-      categoryId: z.number(),
-    }))
+    .input(
+      z.object({
+        transactionId: z.number(),
+        categoryId: z.number(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.user.id;
-      
-      // Buscar transação para pegar a descrição
-      const transactions = await getUserTransactions(userId);
-      const transaction = transactions.find(t => t.id === input.transactionId);
-      
-      if (!transaction) {
-        throw new Error("Transaction not found");
-      }
-      
-      // Atualizar transação
-      await updateTransaction(input.transactionId, {
-        categoryId: input.categoryId,
-        classificationMethod: "manual",
-      });
-      
-      // Registrar no histórico para aprendizado
-      await upsertClassificationHistory(
-        userId,
-        transaction.description,
-        input.categoryId
-      );
-      
+      const db = await getDb();
+      if (!db) throw new Error("Database error");
+
+      await db
+        .update(transactions)
+        .set({ 
+          categoryId: input.categoryId,
+          classificationMethod: "manual",
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(transactions.id, input.transactionId),
+            eq(transactions.userId, ctx.user.id)
+          )
+        );
+
       return { success: true };
     }),
-  
+
   /**
-   * Aprova ou rejeita duplicata
+   * Alternar status de ignorar (Eye Off/On)
+   * Usado para remover transações da soma sem deletar
    */
-  handleDuplicate: protectedProcedure
-    .input(z.object({
-      transactionId: z.number(),
-      action: z.enum(["approve", "reject"]),
-    }))
+  toggleIgnore: protectedProcedure
+    .input(z.object({ transactionId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      if (input.action === "approve") {
-        await updateTransaction(input.transactionId, {
-          isDuplicate: false,
-          duplicateStatus: "approved",
-        });
-      } else {
-        await deleteTransaction(input.transactionId);
-      }
-      
-      return { success: true };
+      const db = await getDb();
+      if (!db) throw new Error("Database error");
+
+      // Buscar estado atual
+      const transaction = await db.query.transactions.findFirst({
+        where: and(eq(transactions.id, input.transactionId), eq(transactions.userId, ctx.user.id)),
+      });
+
+      if (!transaction) throw new Error("Transação não encontrada");
+
+      // Inverter estado
+      const newState = !transaction.isIgnored;
+
+      await db
+        .update(transactions)
+        .set({ 
+          isIgnored: newState,
+          updatedAt: new Date()
+        })
+        .where(eq(transactions.id, input.transactionId));
+
+      return { success: true, isIgnored: newState };
     }),
-  
+
   /**
-   * Deleta transação
+   * Deletar Transação permanentemente
    */
   delete: protectedProcedure
-    .input(z.object({
-      transactionId: z.number(),
-    }))
+    .input(z.object({ transactionId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await deleteTransaction(input.transactionId);
-      
+      const db = await getDb();
+      if (!db) throw new Error("Database error");
+
+      await db
+        .delete(transactions)
+        .where(
+          and(
+            eq(transactions.id, input.transactionId),
+            eq(transactions.userId, ctx.user.id)
+          )
+        );
+
       return { success: true };
     }),
 });
