@@ -38,47 +38,58 @@ interface Transaction {
   description: string;
   amount: number;
   transactionType: "income" | "expense";
-  purchaseDate: string; // O TRPC serializa datas como string
+  purchaseDate: string; 
   paymentDate: string;
   isInstallment: boolean;
   installmentNumber: number | null;
   installmentTotal: number | null;
   categoryId: number | null;
   accountId: number;
-  isIgnored: boolean; // Novo campo
+  isIgnored: boolean;
 }
 
 export default function Transactions() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   
-  // Filtros
+  // --- Estados dos Filtros ---
   const [searchText, setSearchText] = useState("");
   const [filterAccountId, setFilterAccountId] = useState<string>("");
   const [filterCategoryId, setFilterCategoryId] = useState<string>("");
   const [filterType, setFilterType] = useState<string>("");
   const [filterMonth, setFilterMonth] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<"active" | "ignored" | "all">("active"); // Novo estado para status
   const [showFilters, setShowFilters] = useState(false);
   
-  // Construir objeto de filtros
-  const filters: any = {};
+  // --- Construção do Objeto de Filtros para o Backend ---
+  const filters: any = {
+    status: filterStatus
+  };
+
+  // Só adiciona ao filtro se tiver valor preenchido
   if (searchText) filters.search = searchText;
-  if (filterAccountId) filters.accountId = parseInt(filterAccountId);
-  if (filterCategoryId) filters.categoryId = parseInt(filterCategoryId);
-  if (filterType) filters.transactionType = filterType;
+  
+  // Converte string para número antes de enviar
+  if (filterAccountId && filterAccountId !== "all") filters.accountId = parseInt(filterAccountId);
+  if (filterCategoryId && filterCategoryId !== "all") filters.categoryId = parseInt(filterCategoryId);
+  
+  if (filterType && filterType !== "") filters.transactionType = filterType;
+  
   if (filterMonth) {
     const [year, month] = filterMonth.split("-");
+    // Cria data inicio e fim do mês selecionado
     const startDate = new Date(parseInt(year!), parseInt(month!) - 1, 1);
     const endDate = new Date(parseInt(year!), parseInt(month!), 0, 23, 59, 59);
     filters.startDate = startDate.toISOString();
     filters.endDate = endDate.toISOString();
   }
   
+  // Chamada ao Backend (TRPC)
   const { data: transactions, isLoading, refetch } = trpc.transactions.list.useQuery(filters);
   const { data: categories } = trpc.setup.listCategories.useQuery({});
   const { data: accounts } = trpc.setup.listAccounts.useQuery();
   
-  // Mutações
+  // --- Mutações (Ações de alterar dados) ---
   const updateCategoryMutation = trpc.transactions.updateCategory.useMutation({
     onSuccess: () => {
       toast.success("Categoria atualizada!");
@@ -105,6 +116,7 @@ export default function Transactions() {
     onError: (error) => toast.error(`Erro: ${error.message}`),
   });
   
+  // Funções Auxiliares de Exibição
   const getCategoryName = (categoryId: number | null) => {
     if (!categoryId) return "Sem categoria";
     const category = categories?.find(c => c.id === categoryId);
@@ -125,6 +137,7 @@ export default function Transactions() {
     }).format(value);
   };
   
+  // Manipuladores de Eventos
   const handleEditCategory = (transaction: Transaction) => {
     setEditingTransaction(transaction);
     setSelectedCategoryId(transaction.categoryId?.toString() || "");
@@ -141,12 +154,12 @@ export default function Transactions() {
 
   const handleDelete = (id: number) => {
     if (confirm("Tem certeza que deseja excluir esta transação? Essa ação não pode ser desfeita.")) {
-      deleteTransactionMutation.mutate({ transactionId: id });
+      deleteTransactionMutation.mutate({ id });
     }
   };
 
   const handleToggleIgnore = (id: number) => {
-    toggleIgnoreMutation.mutate({ transactionId: id });
+    toggleIgnoreMutation.mutate({ id });
   };
   
   const clearFilters = () => {
@@ -155,9 +168,10 @@ export default function Transactions() {
     setFilterCategoryId("");
     setFilterType("");
     setFilterMonth("");
+    setFilterStatus("active");
   };
   
-  const hasActiveFilters = searchText || filterAccountId || filterCategoryId || filterType || filterMonth;
+  const hasActiveFilters = searchText || filterAccountId || filterCategoryId || filterType || filterMonth || filterStatus !== "active";
   
   return (
     <DashboardLayout>
@@ -187,6 +201,8 @@ export default function Transactions() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                
+                {/* 1. Busca por Texto */}
                 <div className="space-y-2">
                   <Label htmlFor="search">Buscar por descrição</Label>
                   <div className="relative">
@@ -201,6 +217,7 @@ export default function Transactions() {
                   </div>
                 </div>
                 
+                {/* 2. Conta Bancária */}
                 <div className="space-y-2">
                   <Label htmlFor="account">Conta Bancária</Label>
                   <Select value={filterAccountId} onValueChange={setFilterAccountId}>
@@ -208,7 +225,7 @@ export default function Transactions() {
                       <SelectValue placeholder="Todas as contas" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todas as contas</SelectItem>
+                      <SelectItem value="all">Todas as contas</SelectItem>
                       {accounts?.map((account) => (
                         <SelectItem key={account.id} value={account.id.toString()}>
                           {account.name}
@@ -218,6 +235,7 @@ export default function Transactions() {
                   </Select>
                 </div>
                 
+                {/* 3. Categoria */}
                 <div className="space-y-2">
                   <Label htmlFor="category">Categoria</Label>
                   <Select value={filterCategoryId} onValueChange={setFilterCategoryId}>
@@ -225,7 +243,7 @@ export default function Transactions() {
                       <SelectValue placeholder="Todas as categorias" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todas as categorias</SelectItem>
+                      <SelectItem value="all">Todas as categorias</SelectItem>
                       {categories?.map((category) => (
                         <SelectItem key={category.id} value={category.id.toString()}>
                           {category.subcategory ? `${category.name} > ${category.subcategory}` : category.name}
@@ -235,6 +253,7 @@ export default function Transactions() {
                   </Select>
                 </div>
                 
+                {/* 4. Tipo (Receita/Despesa) */}
                 <div className="space-y-2">
                   <Label htmlFor="type">Tipo</Label>
                   <Select value={filterType} onValueChange={setFilterType}>
@@ -242,13 +261,14 @@ export default function Transactions() {
                       <SelectValue placeholder="Todos os tipos" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todas os tipos</SelectItem>
-                      <SelectItem value="income">Receita</SelectItem>
-                      <SelectItem value="expense">Despesa</SelectItem>
+                      <SelectItem value="">Todos os tipos</SelectItem>
+                      <SelectItem value="income">Receita (+)</SelectItem>
+                      <SelectItem value="expense">Despesa (-)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 
+                {/* 5. Mês */}
                 <div className="space-y-2">
                   <Label htmlFor="month">Mês</Label>
                   <Input
@@ -258,6 +278,22 @@ export default function Transactions() {
                     onChange={(e) => setFilterMonth(e.target.value)}
                   />
                 </div>
+
+                {/* 6. Status (Ver Ignoradas) */}
+                <div className="space-y-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select value={filterStatus} onValueChange={(val: any) => setFilterStatus(val)}>
+                    <SelectTrigger id="status">
+                      <SelectValue placeholder="Selecione o status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Ativas (Padrão)</SelectItem>
+                      <SelectItem value="ignored">Ignoradas / Lixeira</SelectItem>
+                      <SelectItem value="all">Todas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
               </div>
               
               {hasActiveFilters && (
@@ -354,12 +390,12 @@ export default function Transactions() {
                               <Pencil className="w-4 h-4" />
                             </Button>
 
-                            {/* Ignorar/Designorar */}
+                            {/* Ignorar/Restaurar */}
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={() => handleToggleIgnore(transaction.id)}
-                              title={transaction.isIgnored ? "Restaurar Transação" : "Ignorar Transação (não somar)"}
+                              title={transaction.isIgnored ? "Restaurar Transação" : "Ignorar Transação"}
                               className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
                             >
                               {transaction.isIgnored ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
@@ -390,7 +426,7 @@ export default function Transactions() {
           </CardContent>
         </Card>
         
-        {/* Modal de Edição (Mantido igual) */}
+        {/* Modal de Edição */}
         <Dialog open={!!editingTransaction} onOpenChange={(open) => !open && setEditingTransaction(null)}>
           <DialogContent>
             <DialogHeader>
