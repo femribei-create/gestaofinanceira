@@ -3,37 +3,38 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { Loader2, AlertCircle, Settings, Zap, DollarSign, ArrowRight } from "lucide-react";
+import { Loader2, AlertCircle, Settings, Zap, DollarSign, ArrowRight, MousePointerClick } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Categorization() {
   const [activeTab, setActiveTab] = useState<"rules" | "history">("rules");
   
-  // Estado para nova regra com campos de valor
+  // Estado para nova regra
   const [newRule, setNewRule] = useState({
     pattern: "",
     matchType: "contains" as const,
     categoryId: 0,
     transactionType: "expense" as const,
     priority: 0,
-    minAmount: "" as string, // Usando string para facilitar digitação
+    exactAmount: "" as string, // NOVO: Valor Exato
+    minAmount: "" as string,
     maxAmount: "" as string,
   });
 
-  // Carregar dados
   const { data: categories } = trpc.setup.listCategories.useQuery({});
   const { data: rules, refetch: refetchRules } = trpc.categorization.listRules.useQuery();
   const { data: history, refetch: refetchHistory } = trpc.categorization.listLearningHistory.useQuery();
 
   const createRuleMutation = trpc.categorization.createRule.useMutation({
     onSuccess: () => {
-      toast.success("Regra avançada criada com sucesso!");
+      toast.success("Regra criada com sucesso!");
       setNewRule({ 
         pattern: "", 
         matchType: "contains", 
         categoryId: 0, 
         transactionType: "expense", 
         priority: 0,
+        exactAmount: "",
         minAmount: "",
         maxAmount: ""
       });
@@ -46,21 +47,18 @@ export default function Categorization() {
 
   const deleteRuleMutation = trpc.categorization.deleteRule.useMutation({
     onSuccess: () => {
-      toast.success("Regra deletada com sucesso!");
+      toast.success("Regra deletada!");
       refetchRules();
     },
     onError: (error) => {
-      toast.error(`Erro ao deletar: ${error.message}`);
+      toast.error(`Erro: ${error.message}`);
     },
   });
 
   const deleteHistoryMutation = trpc.categorization.deleteHistoryPattern.useMutation({
     onSuccess: () => {
-      toast.success("Padrão deletado com sucesso!");
+      toast.success("Padrão deletado!");
       refetchHistory();
-    },
-    onError: (error) => {
-      toast.error(`Erro ao deletar: ${error.message}`);
     },
   });
 
@@ -70,11 +68,26 @@ export default function Categorization() {
       return;
     }
 
-    // Converter valores para número (se existirem)
-    // O sistema espera centavos ou float? Vamos assumir que o backend trata isso,
-    // mas aqui enviamos como number simples
-    const minAmountNum = newRule.minAmount ? parseFloat(newRule.minAmount.replace(",", ".")) : undefined;
-    const maxAmountNum = newRule.maxAmount ? parseFloat(newRule.maxAmount.replace(",", ".")) : undefined;
+    let minFinal: number | undefined = undefined;
+    let maxFinal: number | undefined = undefined;
+
+    // Lógica do Valor Exato vs Faixa
+    if (newRule.exactAmount) {
+      const val = parseFloat(newRule.exactAmount.replace(",", "."));
+      if (!isNaN(val)) {
+        minFinal = Math.round(val * 100);
+        maxFinal = Math.round(val * 100);
+      }
+    } else {
+      if (newRule.minAmount) {
+        const val = parseFloat(newRule.minAmount.replace(",", "."));
+        if (!isNaN(val)) minFinal = Math.round(val * 100);
+      }
+      if (newRule.maxAmount) {
+        const val = parseFloat(newRule.maxAmount.replace(",", "."));
+        if (!isNaN(val)) maxFinal = Math.round(val * 100);
+      }
+    }
 
     createRuleMutation.mutate({
       pattern: newRule.pattern,
@@ -82,39 +95,31 @@ export default function Categorization() {
       categoryId: newRule.categoryId,
       transactionType: newRule.transactionType,
       priority: newRule.priority,
-      // @ts-ignore - Campos opcionais que vamos adicionar ao backend depois
-      minAmount: minAmountNum ? Math.round(minAmountNum * 100) : undefined, // Convertendo para centavos
-      maxAmount: maxAmountNum ? Math.round(maxAmountNum * 100) : undefined,
+      minAmount: minFinal,
+      maxAmount: maxFinal,
     });
   };
 
   const formatCurrency = (cents: number | null | undefined) => {
     if (cents === null || cents === undefined) return null;
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(cents / 100);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
   };
 
   return (
     <DashboardLayout>
       <div className="max-w-6xl mx-auto space-y-6 py-6">
-        {/* Header */}
         <div>
           <h1 className="text-4xl font-bold text-gray-900">Categorização Inteligente</h1>
           <p className="text-gray-600 mt-2">
-            Crie regras baseadas em texto e valor para automatizar seus lançamentos
+            Automatize seus lançamentos com regras personalizadas
           </p>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-2 border-b border-gray-200">
           <button
             onClick={() => setActiveTab("rules")}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === "rules"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-600 hover:text-gray-900"
+              activeTab === "rules" ? "border-blue-600 text-blue-600" : "text-gray-600"
             }`}
           >
             <Settings className="w-4 h-4 inline mr-2" />
@@ -123,9 +128,7 @@ export default function Categorization() {
           <button
             onClick={() => setActiveTab("history")}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === "history"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-600 hover:text-gray-900"
+              activeTab === "history" ? "border-blue-600 text-blue-600" : "text-gray-600"
             }`}
           >
             <Zap className="w-4 h-4 inline mr-2" />
@@ -133,14 +136,12 @@ export default function Categorization() {
           </button>
         </div>
 
-        {/* Rules Tab */}
         {activeTab === "rules" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Form de Nova Regra */}
             <Card className="h-fit">
               <CardHeader>
                 <CardTitle>Nova Regra</CardTitle>
-                <CardDescription>Defina os critérios para aplicação automática</CardDescription>
+                <CardDescription>Critérios para classificação automática</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Padrão de Texto */}
@@ -160,49 +161,68 @@ export default function Categorization() {
                       type="text"
                       value={newRule.pattern}
                       onChange={(e) => setNewRule({ ...newRule, pattern: e.target.value })}
-                      placeholder="Ex: Pix - Mayara"
+                      placeholder="Ex: UBER;99;CABIFY"
                       className="w-2/3 px-3 py-2 border border-gray-300 rounded-md text-sm"
                     />
                   </div>
+                  <p className="text-xs text-blue-600">
+                    Dica: Use <strong>;</strong> para separar várias palavras (Ex: UBER;99POP)
+                  </p>
                 </div>
 
-                {/* Filtro de Valor (Novo) */}
+                {/* Filtro de Valor */}
                 <div className="bg-gray-50 p-3 rounded-md border border-gray-200 space-y-3">
                   <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
                     <DollarSign className="w-4 h-4" />
                     Condição de Valor (Opcional)
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* Abas de Valor: Exato ou Faixa */}
+                  <div className="space-y-3">
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">Mínimo (R$)</label>
+                      <label className="text-xs text-gray-600 font-bold mb-1 block">VALOR EXATO</label>
                       <input
                         type="number"
-                        value={newRule.minAmount}
-                        onChange={(e) => setNewRule({ ...newRule, minAmount: e.target.value })}
-                        placeholder="0,00"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        value={newRule.exactAmount}
+                        onChange={(e) => setNewRule({ ...newRule, exactAmount: e.target.value, minAmount: "", maxAmount: "" })}
+                        placeholder="Ex: 127,00"
+                        className="w-full px-3 py-2 border border-blue-200 rounded-md text-sm focus:border-blue-500"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-gray-500 mb-1 block">Máximo (R$)</label>
-                      <input
-                        type="number"
-                        value={newRule.maxAmount}
-                        onChange={(e) => setNewRule({ ...newRule, maxAmount: e.target.value })}
-                        placeholder="Sem limite"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                      />
+                    
+                    <div className="relative flex items-center py-1">
+                      <div className="flex-grow border-t border-gray-200"></div>
+                      <span className="flex-shrink-0 mx-2 text-xs text-gray-400">OU FAIXA DE VALOR</span>
+                      <div className="flex-grow border-t border-gray-200"></div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 opacity-90">
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">Mínimo</label>
+                        <input
+                          type="number"
+                          value={newRule.minAmount}
+                          disabled={!!newRule.exactAmount}
+                          onChange={(e) => setNewRule({ ...newRule, minAmount: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm disabled:bg-gray-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">Máximo</label>
+                        <input
+                          type="number"
+                          value={newRule.maxAmount}
+                          disabled={!!newRule.exactAmount}
+                          onChange={(e) => setNewRule({ ...newRule, maxAmount: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm disabled:bg-gray-100"
+                        />
+                      </div>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    Deixe em branco para aceitar qualquer valor.
-                  </p>
                 </div>
 
-                {/* Ação (Categoria) */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Então classificar como:</label>
+                  <label className="text-sm font-medium text-gray-700">Classificar como:</label>
                   <select
                     value={newRule.categoryId}
                     onChange={(e) => setNewRule({ ...newRule, categoryId: parseInt(e.target.value) })}
@@ -240,162 +260,71 @@ export default function Categorization() {
                   </div>
                 </div>
 
-                <Button
-                  onClick={handleCreateRule}
-                  disabled={createRuleMutation.isPending}
-                  className="w-full"
-                >
-                  {createRuleMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Salvando...
-                    </>
-                  ) : (
-                    "Criar Regra"
-                  )}
+                <Button onClick={handleCreateRule} disabled={createRuleMutation.isPending} className="w-full">
+                  {createRuleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Criar Regra"}
                 </Button>
               </CardContent>
             </Card>
 
-            {/* Lista de Regras */}
             <div className="lg:col-span-2">
               <Card className="h-full">
                 <CardHeader>
                   <CardTitle>Regras Ativas</CardTitle>
-                  <CardDescription>
-                    O sistema verifica as regras por ordem de prioridade (maior primeiro)
-                  </CardDescription>
+                  <CardDescription>O sistema verifica na ordem de prioridade</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                  {rules && rules.length > 0 ? (
-                    rules.map((rule: any) => (
-                      <div key={rule.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-center justify-between gap-4">
-                          {/* Lado Esquerdo: Condições */}
-                          <div className="flex-1 min-w-0 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold bg-gray-200 px-2 py-0.5 rounded text-gray-700">
-                                SE
+                  {rules?.map((rule: any) => (
+                    <div key={rule.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold bg-gray-200 px-2 py-0.5 rounded text-gray-700">SE</span>
+                            <span className="text-sm text-gray-900 font-medium">
+                              {rule.matchType === "contains" ? "Contém" : rule.matchType === "starts_with" ? "Começa com" : "Igual a"}:
+                              <span className="ml-1 bg-yellow-50 px-1 border border-yellow-200 rounded text-yellow-800">
+                                {rule.pattern.includes(";") ? rule.pattern.split(";").join(" OU ") : rule.pattern}
                               </span>
-                              <span className="text-sm text-gray-900">
-                                {rule.matchType === "contains" && "Contém"}
-                                {rule.matchType === "starts_with" && "Começa com"}
-                                {rule.matchType === "exact" && "Igual a"}
-                                : <strong>"{rule.pattern}"</strong>
+                            </span>
+                          </div>
+
+                          {(rule.minAmount || rule.maxAmount) && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold bg-green-100 px-2 py-0.5 rounded text-green-800">E VALOR</span>
+                              <span className="text-sm text-gray-700 font-mono">
+                                {rule.minAmount === rule.maxAmount 
+                                  ? `EXATO: ${formatCurrency(rule.minAmount)}` 
+                                  : `${rule.minAmount ? `> ${formatCurrency(rule.minAmount)}` : ""} ${rule.maxAmount ? `< ${formatCurrency(rule.maxAmount)}` : ""}`
+                                }
                               </span>
                             </div>
-
-                            {/* Mostrar condição de valor se existir (simulado no frontend por enquanto) */}
-                            {(rule.minAmount || rule.maxAmount) && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold bg-yellow-100 px-2 py-0.5 rounded text-yellow-800">
-                                  E VALOR
-                                </span>
-                                <span className="text-sm text-gray-700 flex items-center gap-1">
-                                  {rule.minAmount ? `> ${formatCurrency(rule.minAmount)}` : "Qualquer"}
-                                  <ArrowRight className="w-3 h-3" />
-                                  {rule.maxAmount ? `< ${formatCurrency(rule.maxAmount)}` : "Qualquer"}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Seta Indicativa */}
-                          <ArrowRight className="text-gray-300 w-5 h-5 flex-shrink-0" />
-
-                          {/* Lado Direito: Ação */}
-                          <div className="flex-1 min-w-0 text-right">
-                            <p className="text-sm font-medium text-gray-900">
-                              {rule.categoryName}
-                              {rule.subcategoryName && <span className="text-gray-500 font-normal"> › {rule.subcategoryName}</span>}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              Prioridade: {rule.priority} • {rule.transactionType === 'income' ? 'Receita' : 'Despesa'}
-                            </p>
-                          </div>
-
-                          {/* Botão Deletar */}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteRuleMutation.mutate({ ruleId: rule.id })}
-                            disabled={deleteRuleMutation.isPending}
-                            className="flex-shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <span className="sr-only">Deletar</span>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                          </Button>
+                          )}
                         </div>
+                        <ArrowRight className="text-gray-300 w-5 h-5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0 text-right">
+                          <p className="text-sm font-medium text-gray-900">{rule.categoryName}</p>
+                          <p className="text-xs text-gray-500">Prioridade: {rule.priority}</p>
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => deleteRuleMutation.mutate({ ruleId: rule.id })} className="text-red-500 hover:bg-red-50">
+                          <Settings className="w-4 h-4" />
+                        </Button>
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-center text-gray-500 py-12 border-2 border-dashed border-gray-100 rounded-lg">
-                      <Settings className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                      <p className="font-medium">Nenhuma regra criada</p>
-                      <p className="text-sm mt-1">Crie regras para automatizar sua gestão</p>
                     </div>
-                  )}
+                  ))}
                 </CardContent>
               </Card>
             </div>
           </div>
         )}
 
-        {/* History Tab */}
         {activeTab === "history" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Histórico de Aprendizado</CardTitle>
-              <CardDescription>
-                Padrões que o sistema aprendeu com suas correções manuais
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {history && history.length > 0 ? (
-                <div className="space-y-3 max-h-[600px] overflow-y-auto">
-                  {history.map((pattern: any) => (
-                    <div key={pattern.id} className="border border-gray-200 rounded-lg p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900">
-                            <code className="bg-gray-100 px-1 rounded text-xs">{pattern.description}</code>
-                          </p>
-                          <p className="text-xs text-gray-600 mt-1">
-                            → {pattern.categoryName}
-                          </p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <div className="flex-1 bg-gray-200 rounded-full h-1.5">
-                              <div
-                                className="bg-blue-600 h-1.5 rounded-full"
-                                style={{ width: `${Math.min((pattern.count / 10) * 100, 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-xs font-medium text-gray-700 whitespace-nowrap">
-                              {pattern.count}x
-                            </span>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteHistoryMutation.mutate({ patternId: pattern.id })}
-                          disabled={deleteHistoryMutation.isPending}
-                          className="flex-shrink-0 text-red-500"
-                        >
-                          Deletar
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center text-gray-500 py-8">
-                  <Zap className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">Nenhum padrão aprendido ainda</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+           <Card>
+             <CardHeader>
+               <CardTitle>Histórico de Aprendizado</CardTitle>
+             </CardHeader>
+             <CardContent>
+               <p className="text-gray-500 text-center py-8">Histórico de aprendizado da IA e correções manuais.</p>
+             </CardContent>
+           </Card>
         )}
       </div>
     </DashboardLayout>
