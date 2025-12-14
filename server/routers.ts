@@ -7,9 +7,10 @@ import { categorizationRouter } from "./routers/categorization";
 import { transactionsRouter } from "./routers/transactions";
 import { dreRouter } from "./routers/dre";
 import { importRouter } from "./routers/import";
+import { accountsRouter } from "./routers/accounts"; // <--- NOVO IMPORT
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
+  // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
@@ -27,6 +28,7 @@ export const appRouter = router({
   transactions: transactionsRouter,
   dre: dreRouter,
   import: importRouter,
+  accounts: accountsRouter, // <--- NOVO REGISTRO
 });
 
 export type AppRouter = typeof appRouter;
