@@ -30,7 +30,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowUpCircle, ArrowDownCircle, Loader2, Pencil, Search, Filter, X } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, Loader2, Pencil, Search, Filter, X, Trash2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
 interface Transaction {
@@ -38,13 +38,14 @@ interface Transaction {
   description: string;
   amount: number;
   transactionType: "income" | "expense";
-  purchaseDate: Date;
-  paymentDate: Date;
+  purchaseDate: string; // O TRPC serializa datas como string
+  paymentDate: string;
   isInstallment: boolean;
   installmentNumber: number | null;
   installmentTotal: number | null;
   categoryId: number | null;
   accountId: number;
+  isIgnored: boolean; // Novo campo
 }
 
 export default function Transactions() {
@@ -77,16 +78,31 @@ export default function Transactions() {
   const { data: categories } = trpc.setup.listCategories.useQuery({});
   const { data: accounts } = trpc.setup.listAccounts.useQuery();
   
+  // Mutações
   const updateCategoryMutation = trpc.transactions.updateCategory.useMutation({
     onSuccess: () => {
-      toast.success("Categoria atualizada com sucesso!");
+      toast.success("Categoria atualizada!");
       refetch();
       setEditingTransaction(null);
       setSelectedCategoryId("");
     },
-    onError: (error) => {
-      toast.error(`Erro ao atualizar categoria: ${error.message}`);
+    onError: (error) => toast.error(`Erro: ${error.message}`),
+  });
+
+  const toggleIgnoreMutation = trpc.transactions.toggleIgnore.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.isIgnored ? "Transação ignorada (não somará nos totais)" : "Transação restaurada");
+      refetch();
     },
+    onError: (error) => toast.error(`Erro: ${error.message}`),
+  });
+
+  const deleteTransactionMutation = trpc.transactions.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Transação excluída permanentemente");
+      refetch();
+    },
+    onError: (error) => toast.error(`Erro: ${error.message}`),
   });
   
   const getCategoryName = (categoryId: number | null) => {
@@ -122,6 +138,16 @@ export default function Transactions() {
       categoryId: parseInt(selectedCategoryId),
     });
   };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Tem certeza que deseja excluir esta transação? Essa ação não pode ser desfeita.")) {
+      deleteTransactionMutation.mutate({ transactionId: id });
+    }
+  };
+
+  const handleToggleIgnore = (id: number) => {
+    toggleIgnoreMutation.mutate({ transactionId: id });
+  };
   
   const clearFilters = () => {
     setSearchText("");
@@ -140,7 +166,7 @@ export default function Transactions() {
           <div>
             <h1 className="text-3xl font-bold">Transações</h1>
             <p className="text-muted-foreground">
-              Visualize, filtre e edite suas transações importadas
+              Visualize, filtre e edite suas transações
             </p>
           </div>
           <Button
@@ -161,7 +187,6 @@ export default function Transactions() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Busca por texto */}
                 <div className="space-y-2">
                   <Label htmlFor="search">Buscar por descrição</Label>
                   <div className="relative">
@@ -176,7 +201,6 @@ export default function Transactions() {
                   </div>
                 </div>
                 
-                {/* Filtro por conta */}
                 <div className="space-y-2">
                   <Label htmlFor="account">Conta Bancária</Label>
                   <Select value={filterAccountId} onValueChange={setFilterAccountId}>
@@ -194,7 +218,6 @@ export default function Transactions() {
                   </Select>
                 </div>
                 
-                {/* Filtro por categoria */}
                 <div className="space-y-2">
                   <Label htmlFor="category">Categoria</Label>
                   <Select value={filterCategoryId} onValueChange={setFilterCategoryId}>
@@ -212,7 +235,6 @@ export default function Transactions() {
                   </Select>
                 </div>
                 
-                {/* Filtro por tipo */}
                 <div className="space-y-2">
                   <Label htmlFor="type">Tipo</Label>
                   <Select value={filterType} onValueChange={setFilterType}>
@@ -227,7 +249,6 @@ export default function Transactions() {
                   </Select>
                 </div>
                 
-                {/* Filtro por mês */}
                 <div className="space-y-2">
                   <Label htmlFor="month">Mês</Label>
                   <Input
@@ -277,22 +298,32 @@ export default function Transactions() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
+                    {transactions.map((transaction: any) => (
+                      <TableRow 
+                        key={transaction.id} 
+                        className={transaction.isIgnored ? "opacity-50 bg-gray-50 hover:bg-gray-100" : ""}
+                      >
                         <TableCell className="whitespace-nowrap">
                           {format(new Date(transaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {transaction.transactionType === "income" ? (
-                              <ArrowUpCircle className="w-4 h-4 text-green-600" />
+                              <ArrowUpCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
                             ) : (
-                              <ArrowDownCircle className="w-4 h-4 text-red-600" />
+                              <ArrowDownCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
                             )}
-                            <span className="max-w-md truncate">{transaction.description}</span>
+                            <span className={`max-w-md truncate ${transaction.isIgnored ? "line-through text-gray-500" : ""}`}>
+                              {transaction.description}
+                            </span>
                             {transaction.isInstallment && (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded whitespace-nowrap">
                                 {transaction.installmentNumber}/{transaction.installmentTotal}
+                              </span>
+                            )}
+                            {transaction.isIgnored && (
+                              <span className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded whitespace-nowrap flex items-center gap-1">
+                                <EyeOff className="w-3 h-3" /> Ignorada
                               </span>
                             )}
                           </div>
@@ -304,18 +335,47 @@ export default function Transactions() {
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
-                          <span className={transaction.transactionType === "income" ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                          <span className={`${
+                            transaction.transactionType === "income" ? "text-green-600" : "text-red-600"
+                          } font-semibold ${transaction.isIgnored ? "text-gray-400" : ""}`}>
                             {transaction.transactionType === "income" ? "+" : "-"}{formatCurrency(transaction.amount)}
                           </span>
                         </TableCell>
                         <TableCell className="text-center">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleEditCategory(transaction)}
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Editar Categoria */}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleEditCategory(transaction)}
+                              title="Editar Categoria"
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+
+                            {/* Ignorar/Designorar */}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleToggleIgnore(transaction.id)}
+                              title={transaction.isIgnored ? "Restaurar Transação" : "Ignorar Transação (não somar)"}
+                              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                            >
+                              {transaction.isIgnored ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                            </Button>
+
+                            {/* Excluir */}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDelete(transaction.id)}
+                              title="Excluir Permanentemente"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -330,7 +390,7 @@ export default function Transactions() {
           </CardContent>
         </Card>
         
-        {/* Modal de Edição */}
+        {/* Modal de Edição (Mantido igual) */}
         <Dialog open={!!editingTransaction} onOpenChange={(open) => !open && setEditingTransaction(null)}>
           <DialogContent>
             <DialogHeader>
@@ -339,17 +399,12 @@ export default function Transactions() {
                 Altere a categoria desta transação
               </DialogDescription>
             </DialogHeader>
-            
             {editingTransaction && (
               <div className="space-y-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Transação:</p>
                   <p className="font-medium">{editingTransaction.description}</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {format(new Date(editingTransaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })} • {formatCurrency(editingTransaction.amount)}
-                  </p>
                 </div>
-                
                 <div className="space-y-2">
                   <Label htmlFor="edit-category">Nova Categoria</Label>
                   <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
@@ -367,7 +422,6 @@ export default function Transactions() {
                 </div>
               </div>
             )}
-            
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditingTransaction(null)}>
                 Cancelar
