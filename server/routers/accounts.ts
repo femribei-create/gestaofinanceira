@@ -1,4 +1,4 @@
-import { router, publicProcedure } from "../trpc";
+import { router, publicProcedure } from "../_core/trpc";
 import { accounts } from "@/db/schema"; 
 
 export const accountsRouter = router({
