@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-// Importamos getDb do engine
-import { getDb } from "../categorization.engine"; 
-// CORREÇÃO AQUI: Adicionamos mais um "../" para chegar na raiz
+// CORREÇÃO FINAL: Pegamos o getDb direto da fonte (../db) e não do engine
+import { getDb } from "../db"; 
 import { transactions } from "../../drizzle/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 
@@ -67,7 +66,7 @@ export const transactionsRouter = router({
     }),
 
   /**
-   * Atualizar Categoria (e mudar método para manual)
+   * Atualizar Categoria
    */
   updateCategory: protectedProcedure
     .input(
@@ -99,7 +98,6 @@ export const transactionsRouter = router({
 
   /**
    * Alternar status de ignorar (Eye Off/On)
-   * Usado para remover transações da soma sem deletar
    */
   toggleIgnore: protectedProcedure
     .input(z.object({ transactionId: z.number() }))
