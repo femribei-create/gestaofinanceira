@@ -1,14 +1,15 @@
 import { getDb } from "./db";
 import { classificationRules, classificationHistory, transactions, categories, accounts } from "../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { applyRules, classifyTransaction } from "../classification";
+// CORREÇÃO AQUI: Mudamos de ".." para "." pois estão na mesma pasta
+import { applyRules, classifyTransaction } from "./classification"; 
 
 /**
  * Motor de Categorização
  * Gerencia a lógica de banco de dados para regras e aprendizado
  */
 
-// 1. Criar ou Atualizar Regra (AQUI ESTAVA O SEGREDO FALTANDO)
+// 1. Criar ou Atualizar Regra
 export async function createOrUpdateRule(
   userId: number,
   ruleId: number | null,
@@ -126,8 +127,15 @@ export async function categorizeTransaction(userId: number, description: string,
     // Busca categorias para IA
     const allCategories = await db.select().from(categories).where(eq(categories.userId, userId));
 
-    // Chama a função de classificação (que já atualizamos para ler o valor!)
-    return await classifyTransaction(userId, { description, amount, date: new Date() } as any, accountId || 0, userRules as any, allCategories);
+    // Chama a função de classificação passando o amount
+    // Usamos 'as any' para contornar checagens estritas de tipo do objeto Date, focando na lógica
+    return await classifyTransaction(
+        userId, 
+        { description, amount, date: new Date() } as any, 
+        accountId || 0, 
+        userRules as any, 
+        allCategories
+    );
 }
 
 export async function learnFromCorrection(userId: number, description: string, categoryId: number) {
