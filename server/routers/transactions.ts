@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-// CORREÇÃO FINAL: Pegamos o getDb direto da fonte (../db) e não do engine
-import { getDb } from "../db"; 
+// Importamos getDb direto da fonte
+import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 
@@ -52,7 +52,7 @@ export const transactionsRouter = router({
       if (input.endDate) {
         conditions.push(lte(transactions.purchaseDate, new Date(input.endDate)));
       }
-      
+
       // Filtro de Duplicatas (se não especificado, mostra tudo)
       if (input.isDuplicate !== undefined) {
          conditions.push(eq(transactions.isDuplicate, input.isDuplicate));
@@ -81,7 +81,7 @@ export const transactionsRouter = router({
 
       await db
         .update(transactions)
-        .set({ 
+        .set({
           categoryId: input.categoryId,
           classificationMethod: "manual",
           updatedAt: new Date(),
@@ -105,10 +105,16 @@ export const transactionsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database error");
 
-      // Buscar estado atual
-      const transaction = await db.query.transactions.findFirst({
-        where: and(eq(transactions.id, input.transactionId), eq(transactions.userId, ctx.user.id)),
-      });
+      // ---- CORREÇÃO AQUI ----
+      // Usamos db.select()... que é mais robusto que db.query... neste caso
+      const transactionResults = await db
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.id, input.transactionId), eq(transactions.userId, ctx.user.id)))
+        .limit(1);
+
+      const transaction = transactionResults[0];
+      // -----------------------
 
       if (!transaction) throw new Error("Transação não encontrada");
 
@@ -117,7 +123,7 @@ export const transactionsRouter = router({
 
       await db
         .update(transactions)
-        .set({ 
+        .set({
           isIgnored: newState,
           updatedAt: new Date()
         })
