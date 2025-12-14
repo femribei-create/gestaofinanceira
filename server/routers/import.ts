@@ -44,13 +44,25 @@ export const importRouter = router({
           transactions: [],
         };
       }
+
+      // --- FILTRO DE LIMPEZA (ITAÚ e outros lixos) ---
+      // Criamos uma nova lista excluindo linhas que são apenas saldo informativo
+      const cleanTransactions = parseResult.transactions.filter(trx => {
+        const desc = trx.description.toUpperCase();
+        
+        // Remove linhas de saldo do Itaú
+        if (desc.includes("SALDO TOTAL DISPONÍVEL")) return false; // Pega "DIA" e variações
+        if (desc.includes("SALDO DO DIA")) return false; 
+        
+        return true;
+      });
       
       // Buscar transações existentes do usuário
       const existingTransactions = await getUserTransactions(userId);
       
-      // Detectar duplicatas
+      // Detectar duplicatas (Usando a lista limpa)
       const duplicates = detectDuplicatesBatch(
-        parseResult.transactions,
+        cleanTransactions,
         existingTransactions
       );
       
@@ -60,17 +72,17 @@ export const importRouter = router({
       const categories = await getUserCategories(userId);
       const rules = await getUserClassificationRules(userId);
       
-      // Classificar transações
+      // Classificar transações (Usando a lista limpa)
       const classifications = await classifyTransactionsBatch(
         userId,
-        parseResult.transactions,
+        cleanTransactions,
         input.accountId,
         rules,
         categories
       );
       
-      // Combinar resultados
-      const transactionsWithMetadata = parseResult.transactions.map((trx, index) => {
+      // Combinar resultados (Usando a lista limpa)
+      const transactionsWithMetadata = cleanTransactions.map((trx, index) => {
         const duplicate = duplicates.get(index);
         const classification = classifications[index]!;
         
@@ -149,7 +161,8 @@ export const importRouter = router({
         accountId: input.accountId,
         categoryId: trx.categoryId,
         description: trx.description,
-        amount: trx.transactionType === "expense" ? -trx.amount : trx.amount,
+        // Garante sinal correto: Despesa é negativo, Receita é positivo
+        amount: trx.transactionType === "expense" ? -Math.abs(trx.amount) : Math.abs(trx.amount),
         transactionType: trx.transactionType,
         purchaseDate: new Date(trx.purchaseDate),
         paymentDate: new Date(trx.paymentDate),
