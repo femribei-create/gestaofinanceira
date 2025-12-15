@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../_core/trpc";
+// Importação correta para o Railway
 import { transactions } from "../../drizzle/schema"; 
-// Importamos 'sql' para resolver o problema dos valores nulos antigos
-import { eq, and, gte, lte, desc, like, sql } from "drizzle-orm";
+import { eq, and, gte, lte, desc, like } from "drizzle-orm";
 
 export const transactionsRouter = router({
-  // 1. LISTAGEM
+  // 1. LISTAGEM COMPLETA
   list: publicProcedure
     .input(
       z.object({
@@ -47,10 +47,10 @@ export const transactionsRouter = router({
         whereConditions.push(like(transactions.description, `%${input.search}%`));
       }
 
-      // 6. Filtro de Status (CORREÇÃO AQUI)
+      // 6. Filtro de Status (Lógica padrão limpa)
+      // Como rodamos o SQL, não existem mais nulos, então 'false' pega tudo que é ativo.
       if (input.status === "active") {
-        // Agora aceita: Ou é Falso (0) OU é Nulo (transações antigas)
-        whereConditions.push(sql`(${transactions.isIgnored} IS FALSE OR ${transactions.isIgnored} IS NULL)`);
+        whereConditions.push(eq(transactions.isIgnored, false));
       } else if (input.status === "ignored") {
         whereConditions.push(eq(transactions.isIgnored, true));
       }
@@ -71,7 +71,6 @@ export const transactionsRouter = router({
       
       if (!transaction[0]) throw new Error("Transação não encontrada");
 
-      // Ao alterar, garantimos que vira boolean (true/false) limpando qualquer null futuro
       await db.update(transactions)
         .set({ isIgnored: !transaction[0].isIgnored })
         .where(eq(transactions.id, input.id));
