@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../_core/trpc";
-// Importação correta para o Railway
+// Mantendo o caminho correto que consertou o erro do Railway
 import { transactions } from "../../drizzle/schema"; 
-import { eq, and, gte, lte, desc, like } from "drizzle-orm";
+// Adicionei 'or' e 'isNull' para resolver o problema das transações sumidas
+import { eq, and, gte, lte, desc, like, or, isNull } from "drizzle-orm";
 
 export const transactionsRouter = router({
   // 1. LISTAGEM COMPLETA
@@ -47,10 +48,10 @@ export const transactionsRouter = router({
         whereConditions.push(like(transactions.description, `%${input.search}%`));
       }
 
-      // 6. Filtro de Status (Lógica padrão limpa)
-      // Como rodamos o SQL, não existem mais nulos, então 'false' pega tudo que é ativo.
+      // 6. Filtro de Status (A SOLUÇÃO DEFINITIVA)
       if (input.status === "active") {
-        whereConditions.push(eq(transactions.isIgnored, false));
+        // Aqui está a mágica: Traz se for Falso (0) OU se for Nulo (Vazio/Antigo)
+        whereConditions.push(or(eq(transactions.isIgnored, false), isNull(transactions.isIgnored)));
       } else if (input.status === "ignored") {
         whereConditions.push(eq(transactions.isIgnored, true));
       }
@@ -71,6 +72,7 @@ export const transactionsRouter = router({
       
       if (!transaction[0]) throw new Error("Transação não encontrada");
 
+      // Ao alterar, o banco já vai salvar como 0 ou 1, limpando o null dessa transação específica
       await db.update(transactions)
         .set({ isIgnored: !transaction[0].isIgnored })
         .where(eq(transactions.id, input.id));
