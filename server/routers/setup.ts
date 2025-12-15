@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+// Imports relativos seguros (../db aponta para server/db.ts)
 import {
   getUserCategories,
   createCategory,
@@ -33,6 +34,7 @@ export const setupRouter = router({
         rulesCount: rules.length,
       };
     }),
+
   /**
    * Inicializa categorias padrão do usuário
    */
