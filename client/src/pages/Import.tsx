@@ -78,8 +78,28 @@ export default function Import() {
     }));
   };
   
+  // Função auxiliar para converter data para ISO string
+  const convertToISOString = (date: any): string => {
+    if (typeof date === 'string') {
+      return date;
+    }
+    if (date instanceof Date) {
+      return date.toISOString();
+    }
+    // Tentar converter como string
+    try {
+      return new Date(date).toISOString();
+    } catch {
+      return new Date().toISOString();
+    }
+  };
+  
   const handleConfirmImport = () => {
-    if (!uploadResult || !selectedAccountId) return;
+    if (!uploadResult || !selectedAccountId || !selectedFile) return;
+    
+    // Detectar formato do arquivo (OFX ou CSV)
+    const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
+    const source = fileExtension === 'ofx' ? 'ofx' : 'csv';
     
     // Filtrar transações baseado nas ações do usuário
     const transactionsToImport = uploadResult.transactions
@@ -97,123 +117,96 @@ export default function Import() {
         return false;
       })
       .map((t: any) => ({
-        description: t.description,
-        amount: t.amount,
-        transactionType: t.transactionType,
-        purchaseDate: new Date(t.purchaseDate).toISOString(),
-        paymentDate: new Date(t.paymentDate).toISOString(),
-        isInstallment: t.isInstallment,
-        installmentNumber: t.installmentNumber,
-        installmentTotal: t.installmentTotal,
-        originalPurchaseDate: t.originalPurchaseDate ? new Date(t.originalPurchaseDate).toISOString() : undefined,
-        fitId: t.fitId,
-        source: t.source,
-        sourceFile: t.sourceFile,
-        categoryId: t.classification.categoryId,
-        suggestedCategoryId: t.classification.suggestedCategoryId,
-        classificationMethod: t.classification.method,
+        description: t.description || '',
+        amount: typeof t.amount === 'number' ? Math.round(t.amount) : 0,
+        transactionType: t.transactionType || 'expense',
+        purchaseDate: convertToISOString(t.purchaseDate),
+        paymentDate: convertToISOString(t.paymentDate),
+        isInstallment: t.isInstallment === true,
+        installmentNumber: t.installmentNumber ? parseInt(t.installmentNumber) : undefined,
+        installmentTotal: t.installmentTotal ? parseInt(t.installmentTotal) : undefined,
+        originalPurchaseDate: t.originalPurchaseDate ? convertToISOString(t.originalPurchaseDate) : undefined,
+        fitId: t.fitId || undefined,
+        source: source as 'ofx' | 'csv',
+        sourceFile: selectedFile.name,
+        categoryId: t.classification?.categoryId || null,
+        suggestedCategoryId: t.classification?.suggestedCategoryId || undefined,
+        classificationMethod: t.classification?.method || 'manual',
       }));
     
+    if (transactionsToImport.length === 0) {
+      toast.error('Nenhuma transação para importar');
+      return;
+    }
+    
     confirmImport.mutate({
-      accountId: parseInt(selectedAccountId),
       transactions: transactionsToImport,
+      accountId: parseInt(selectedAccountId),
     });
   };
   
-  const handleReset = () => {
-    setSelectedFile(null);
-    setUploadResult(null);
-    setSelectedAccountId("");
-    setDuplicateActions({});
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-  
-  const formatCurrency = (cents: number) => {
-    const value = Math.abs(cents) / 100;
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value);
-  };
-  
-  const duplicateTransactions = uploadResult?.transactions.filter((t: any) => t.isDuplicate) || [];
-  const approvedDuplicates = Object.values(duplicateActions).filter(action => action === 'approve').length;
-  const totalToImport = uploadResult?.transactions.filter((t: any) => !t.isDuplicate).length + approvedDuplicates;
-  
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto space-y-6 py-6">
+      <div className="container mx-auto py-8 space-y-6">
+        {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold">Importar Transações</h1>
-          <p className="text-muted-foreground mt-1">
-            Faça upload de arquivos OFX ou CSV para importar suas transações
+          <h1 className="text-3xl font-bold tracking-tight">Importar Transações</h1>
+          <p className="text-muted-foreground mt-2">
+            Importe seus extratos bancários em formato OFX ou CSV
           </p>
         </div>
-        
-        {/* Upload Form */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Selecionar Arquivo</CardTitle>
-            <CardDescription>
-              Arquivos suportados: OFX (bancos), CSV (cartões e sangria)
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Conta Bancária</label>
-              <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma conta" />
-                </SelectTrigger>
-                <SelectContent>
-                  {loadingAccounts ? (
-                    <SelectItem value="loading" disabled>Carregando...</SelectItem>
-                  ) : accounts?.map((account) => (
-                    <SelectItem key={account.id} value={account.id.toString()}>
-                      {account.name} ({account.accountType === "bank" ? "Banco" : "Cartão"})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-2">Arquivo</label>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".ofx,.csv"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  id="file-upload"
-                />
-                <label htmlFor="file-upload" className="cursor-pointer">
-                  <Upload className="w-12 h-12 mx-auto text-gray-400 mb-2" />
-                  {selectedFile ? (
-                    <div className="space-y-1">
-                      <p className="font-medium text-blue-600">{selectedFile.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {(selectedFile.size / 1024).toFixed(2)} KB
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="font-medium">Clique para selecionar arquivo</p>
-                      <p className="text-sm text-muted-foreground">ou arraste e solte aqui</p>
-                    </div>
-                  )}
-                </label>
+
+        {/* Upload Section */}
+        {!uploadResult && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Selecionar Arquivo</CardTitle>
+              <CardDescription>
+                Escolha um arquivo OFX ou CSV do seu banco
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Arquivo</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".ofx,.csv"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {selectedFile ? selectedFile.name : "Selecionar arquivo"}
+                  </Button>
+                </div>
               </div>
-            </div>
-            
-            <div className="flex gap-2">
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Conta Bancária</label>
+                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma conta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts?.map((account) => (
+                      <SelectItem key={account.id} value={account.id.toString()}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <Button
                 onClick={handleUpload}
                 disabled={!selectedFile || !selectedAccountId || uploadFile.isPending}
-                className="flex-1"
+                className="w-full"
               >
                 {uploadFile.isPending ? (
                   <>
@@ -222,233 +215,141 @@ export default function Import() {
                   </>
                 ) : (
                   <>
-                    <FileText className="w-4 h-4 mr-2" />
+                    <Upload className="w-4 h-4 mr-2" />
                     Processar Arquivo
                   </>
                 )}
               </Button>
-              
-              {uploadResult && (
-                <Button onClick={handleReset} variant="outline">
-                  Novo Arquivo
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        
-        {/* Upload Result */}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Results Section */}
         {uploadResult && (
-          <>
+          <div className="space-y-4">
+            {/* Summary */}
             <Card>
               <CardHeader>
-                <CardTitle>Resultado do Processamento</CardTitle>
+                <CardTitle>Resumo da Importação</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {uploadResult.success ? (
-                  <>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <p className="text-sm text-muted-foreground">Total de Transações</p>
-                        <p className="text-2xl font-bold text-blue-600">
-                          {uploadResult.transactions.length}
-                        </p>
-                      </div>
-                      
-                      <div className="bg-green-50 p-4 rounded-lg">
-                        <p className="text-sm text-muted-foreground">Novas Transações</p>
-                        <p className="text-2xl font-bold text-green-600">
-                          {uploadResult.transactions.filter((t: any) => !t.isDuplicate).length}
-                        </p>
-                      </div>
-                      
-                      <div className="bg-yellow-50 p-4 rounded-lg">
-                        <p className="text-sm text-muted-foreground">Duplicatas</p>
-                        <p className="text-2xl font-bold text-yellow-600">
-                          {uploadResult.duplicateStats.total}
-                        </p>
-                      </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {uploadResult.transactions?.length || 0}
                     </div>
-                    
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-                      <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-medium text-green-900">Classificação Automática</p>
-                        <p className="text-sm text-green-700 mt-1">
-                          As transações foram classificadas automaticamente usando regras.
-                          Você poderá revisar e corrigir as categorias depois.
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <p className="font-medium text-red-900">Erro ao Processar Arquivo</p>
-                    <ul className="text-sm text-red-700 mt-2 space-y-1">
-                      {uploadResult.errors.map((error: string, index: number) => (
-                        <li key={index}>• {error}</li>
-                      ))}
-                    </ul>
+                    <div className="text-sm text-gray-600">Transações encontradas</div>
                   </div>
-                )}
+                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                    <div className="text-2xl font-bold text-yellow-600">
+                      {uploadResult.duplicateStats?.total || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">Possíveis duplicatas</div>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">
+                      {(uploadResult.transactions?.length || 0) - (uploadResult.duplicateStats?.total || 0)}
+                    </div>
+                    <div className="text-sm text-gray-600">Prontas para importar</div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
-            
-            {/* Duplicates Section */}
-            {duplicateTransactions.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5 text-yellow-600" />
-                    Duplicatas Detectadas ({duplicateTransactions.length})
-                  </CardTitle>
-                  <CardDescription>
-                    Revise cada duplicata e decida se deseja importar ou ignorar
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {duplicateTransactions.map((transaction: any, index: number) => {
-                    const originalIndex = uploadResult.transactions.indexOf(transaction);
-                    const action = duplicateActions[originalIndex];
-                    
-                    return (
-                      <div 
-                        key={index} 
-                        className={`border rounded-lg p-4 ${
-                          action === 'approve' ? 'border-green-500 bg-green-50' : 
-                          action === 'reject' ? 'border-red-500 bg-red-50' : 
-                          'border-yellow-300 bg-yellow-50'
-                        }`}
-                      >
-                        {/* Cabeçalho com tipo de duplicata */}
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <AlertCircle className="w-5 h-5 text-yellow-600" />
-                            <span className="font-semibold text-yellow-900">
-                              {transaction.duplicateInfo?.type === 'exact' ? 'Duplicata Exata' : `Duplicata Similar (${Math.round((transaction.duplicateInfo?.similarity || 0) * 100)}% similar)`}
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant={action === 'approve' ? 'default' : 'outline'}
-                              onClick={() => handleDuplicateAction(originalIndex, 'approve')}
-                              className={action === 'approve' ? 'bg-green-600 hover:bg-green-700' : ''}
-                            >
-                              <Check className="w-4 h-4 mr-1" />
-                              Importar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={action === 'reject' ? 'default' : 'outline'}
-                              onClick={() => handleDuplicateAction(originalIndex, 'reject')}
-                              className={action === 'reject' ? 'bg-red-600 hover:bg-red-700' : ''}
-                            >
-                              <X className="w-4 h-4 mr-1" />
-                              Ignorar
-                            </Button>
-                          </div>
+
+            {/* Transactions List */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Transações</CardTitle>
+                <CardDescription>
+                  Revise as transações antes de confirmar a importação
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 max-h-96 overflow-y-auto">
+                {uploadResult.transactions?.map((transaction: any, index: number) => (
+                  <div
+                    key={index}
+                    className={`p-3 border rounded-lg ${
+                      transaction.isDuplicate ? "bg-yellow-50 border-yellow-200" : "bg-gray-50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{transaction.description}</div>
+                        <div className="text-sm text-gray-600">
+                          {format(new Date(transaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })}
                         </div>
-                        
-                        {/* Comparação lado a lado */}
-                        <div className="grid grid-cols-2 gap-4 mb-3">
-                          {/* Transação Existente */}
-                          {transaction.duplicateInfo?.existingTransaction && (
-                            <div className="border-r pr-4">
-                              <p className="text-xs font-semibold text-muted-foreground mb-2">← TRANSAÇÃO EXISTENTE (JÁ NO BANCO)</p>
-                              <div className="space-y-2">
-                                <div>
-                                  <p className="text-xs text-muted-foreground">Descrição:</p>
-                                  <p className="font-medium text-sm">{transaction.duplicateInfo.existingTransaction.description}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-muted-foreground">Data:</p>
-                                  <p className="text-sm">{format(new Date(transaction.duplicateInfo.existingTransaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-muted-foreground">Valor:</p>
-                                  <p className={`text-sm font-semibold ${
-                                    transaction.duplicateInfo.existingTransaction.transactionType === "income" ? "text-green-600" : "text-red-600"
-                                  }`}>
-                                    {transaction.duplicateInfo.existingTransaction.transactionType === "income" ? "+" : "-"}{formatCurrency(transaction.duplicateInfo.existingTransaction.amount)}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Transação Nova */}
-                          <div>
-                            <p className="text-xs font-semibold text-muted-foreground mb-2">NOVA TRANSAÇÃO (DUPLICATA) →</p>
-                            <div className="space-y-2">
-                              <div>
-                                <p className="text-xs text-muted-foreground">Descrição:</p>
-                                <p className="font-medium text-sm">{transaction.description}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground">Data:</p>
-                                <p className="text-sm">{format(new Date(transaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground">Valor:</p>
-                                <p className={`text-sm font-semibold ${
-                                  transaction.transactionType === "income" ? "text-green-600" : "text-red-600"
-                                }`}>
-                                  {transaction.transactionType === "income" ? "+" : "-"}{formatCurrency(transaction.amount)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {action === 'approve' && (
-                          <div className="text-sm text-green-700 bg-green-100 p-2 rounded">
-                            ✓ Esta transação será importada mesmo sendo duplicata
-                          </div>
-                        )}
-                        {action === 'reject' && (
-                          <div className="text-sm text-red-700 bg-red-100 p-2 rounded">
-                            ✗ Esta transação será ignorada
-                          </div>
-                        )}
-                        {!action && (
-                          <div className="text-sm text-yellow-700 bg-yellow-100 p-2 rounded">
-                            ⚠ Aguardando sua decisão (padrão: ignorar)
+                        {transaction.isInstallment && (
+                          <div className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded inline-block mt-1">
+                            Parcela {transaction.installmentNumber}/{transaction.installmentTotal}
                           </div>
                         )}
                       </div>
-                    );
-                  })}
-                </CardContent>
-              </Card>
-            )}
-            
-            {/* Confirm Import Button */}
-            {uploadResult.success && (
-              <Card>
-                <CardContent className="pt-6">
-                  <Button
-                    onClick={handleConfirmImport}
-                    disabled={confirmImport.isPending}
-                    className="w-full"
-                    size="lg"
-                  >
-                    {confirmImport.isPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Importando...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Confirmar Importação ({totalToImport} transações)
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-          </>
+                      <div className="text-right">
+                        <div className={`font-semibold ${
+                          transaction.transactionType === "income" ? "text-green-600" : "text-red-600"
+                        }`}>
+                          {transaction.transactionType === "income" ? "+" : "-"}
+                          {new Intl.NumberFormat("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          }).format(transaction.amount / 100)}
+                        </div>
+                      </div>
+                      {transaction.isDuplicate && (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant={duplicateActions[index] === 'approve' ? "default" : "outline"}
+                            onClick={() => handleDuplicateAction(index, 'approve')}
+                          >
+                            <Check className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={duplicateActions[index] === 'reject' ? "destructive" : "outline"}
+                            onClick={() => handleDuplicateAction(index, 'reject')}
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setUploadResult(null);
+                  setSelectedFile(null);
+                  setDuplicateActions({});
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleConfirmImport}
+                disabled={confirmImport.isPending}
+                className="flex-1"
+              >
+                {confirmImport.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Importando...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    Confirmar Importação
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </DashboardLayout>

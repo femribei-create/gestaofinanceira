@@ -13,15 +13,19 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, PanelLeft, FileText, Upload, Settings, TrendingUp } from "lucide-react";
+import { LayoutDashboard, PanelLeft, FileText, Upload, Settings, TrendingUp, Plus, Calendar, Layers, Wallet } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: Plus, label: "Adicionar Transação", path: "/add-transaction" },
   { icon: Upload, label: "Importar Arquivos", path: "/import" },
   { icon: FileText, label: "Transações", path: "/transactions" },
+  { icon: Layers, label: "Gerenciar Categorias", path: "/categories" },
   { icon: Settings, label: "Categorização", path: "/categorization" },
+  { icon: Calendar, label: "Datas de Fechamento", path: "/card-closing-dates" },
+  { icon: Wallet, label: "Gastos Pessoais", path: "/personal-dashboard" },
   { icon: TrendingUp, label: "DRE Mensal", path: "/dre" },
 ];
 
@@ -100,113 +104,91 @@ function DashboardLayoutContent({
     if (isResizing) {
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
     }
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
     };
   }, [isResizing, setSidebarWidth]);
 
   return (
-    <>
-      <div className="relative" ref={sidebarRef}>
-        <Sidebar
-          collapsible="icon"
-          className="border-r-0"
-          disableTransition={isResizing}
-        >
-          <SidebarHeader className="h-16 justify-center">
-            <div className="flex items-center gap-3 px-2 transition-all w-full">
-              <button
-                onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation"
-              >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
-              </button>
-              {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate">
-                    Gestão Financeira
-                  </span>
-                </div>
-              ) : null}
+    <div className="flex h-screen w-full">
+      <Sidebar ref={sidebarRef} className="border-r">
+        <SidebarHeader className="border-b px-4 py-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">GF</span>
             </div>
-          </SidebarHeader>
-
-          <SidebarContent className="gap-0">
-            <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                      />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarContent>
-
-          <SidebarFooter className="p-3">
-            <div className="flex items-center gap-3 rounded-lg px-1 py-1 w-full">
-              <Avatar className="h-9 w-9 border shrink-0">
-                <AvatarFallback className="text-xs font-medium">
-                  U
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                <p className="text-sm font-medium truncate leading-none">
-                  Usuário Padrão
-                </p>
-                <p className="text-xs text-muted-foreground truncate mt-1.5">
-                  Sistema sem login
-                </p>
-              </div>
-            </div>
-          </SidebarFooter>
-        </Sidebar>
-        <div
-          className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/20 transition-colors ${isCollapsed ? "hidden" : ""}`}
-          onMouseDown={() => {
-            if (isCollapsed) return;
-            setIsResizing(true);
-          }}
-          style={{ zIndex: 50 }}
-        />
-      </div>
-
-      <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
-                  </span>
-                </div>
-              </div>
-            </div>
+            {!isCollapsed && <span className="font-semibold text-sm">Gestão Financeira</span>}
           </div>
+        </SidebarHeader>
+
+        <SidebarContent className="px-2 py-4">
+          <SidebarMenu>
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeMenuItem?.path === item.path;
+
+              return (
+                <SidebarMenuItem key={item.path}>
+                  <SidebarMenuButton
+                    onClick={() => setLocation(item.path)}
+                    className={`w-full justify-start gap-3 px-3 py-2 rounded-lg transition-colors ${
+                      isActive
+                        ? "bg-blue-100 text-blue-600 font-semibold"
+                        : "hover:bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    {!isCollapsed && <span className="text-sm">{item.label}</span>}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
+          </SidebarMenu>
+        </SidebarContent>
+
+        <SidebarFooter className="border-t px-4 py-4">
+          <div className="flex items-center gap-3">
+            <Avatar className="w-8 h-8">
+              <AvatarFallback>U</AvatarFallback>
+            </Avatar>
+            {!isCollapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">Usuário</p>
+                <p className="text-xs text-gray-500 truncate">user@example.com</p>
+              </div>
+            )}
+          </div>
+        </SidebarFooter>
+
+        {!isCollapsed && (
+          <div
+            onMouseDown={() => setIsResizing(true)}
+            className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-500 transition-colors"
+          />
         )}
-        <main className="flex-1 p-4">{children}</main>
+      </Sidebar>
+
+      <SidebarInset className="flex-1 flex flex-col overflow-hidden">
+        <header className="border-b px-4 py-3 flex items-center justify-between bg-white">
+          <div className="flex items-center gap-2">
+            <SidebarTrigger className="mr-2" />
+            {activeMenuItem && (
+              <div>
+                <h1 className="text-lg font-semibold text-gray-900">{activeMenuItem.label}</h1>
+              </div>
+            )}
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-auto bg-gray-50">
+          <div className="p-6">
+            {children}
+          </div>
+        </main>
       </SidebarInset>
-    </>
+    </div>
   );
 }

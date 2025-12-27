@@ -1,13 +1,11 @@
 import { z } from "zod";
-import { router, publicProcedure } from "../_core/trpc";
-// Mantemos o caminho que sabemos que funciona
-import { transactions } from "../../drizzle/schema"; 
-// Removemos 'or', 'isNull', 'sql' que estavam causando o crash
+import { router, protectedProcedure } from "../_core/trpc";
+import { transactions, categories, accounts } from "../../drizzle/schema";
 import { eq, and, gte, lte, desc, like } from "drizzle-orm";
 
 export const transactionsRouter = router({
   // 1. LISTAGEM (Versão Estável e Limpa)
-  list: publicProcedure
+  list: protectedProcedure
     .input(
       z.object({
         startDate: z.date().optional(),
@@ -20,9 +18,10 @@ export const transactionsRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const { db } = ctx;
+      if (!ctx.db) throw new Error("Database not available");
+      if (!ctx.user) throw new Error("User not authenticated");
       
-      const whereConditions = [];
+      const whereConditions = [eq(transactions.userId, ctx.user.id)];
 
       // Filtros de Data
       if (input.startDate) whereConditions.push(gte(transactions.purchaseDate, input.startDate));
@@ -37,41 +36,179 @@ export const transactionsRouter = router({
       if (input.search) whereConditions.push(like(transactions.description, `%${input.search}%`));
 
       // Lógica de Status (SIMPLIFICADA)
-      // Como seu banco já tem 0 e 1, não precisamos de OR nem isNull.
       if (input.status === "active") {
-        whereConditions.push(eq(transactions.isIgnored, false)); // Pega apenas os '0'
+        whereConditions.push(eq(transactions.isIgnored, false));
       } else if (input.status === "ignored") {
-        whereConditions.push(eq(transactions.isIgnored, true)); // Pega apenas os '1'
+        whereConditions.push(eq(transactions.isIgnored, true));
       }
 
-      return db
+      return ctx.db
         .select()
         .from(transactions)
         .where(and(...whereConditions))
         .orderBy(desc(transactions.purchaseDate));
     }),
 
-  // 2. ALTERNAR IGNORAR
-  toggleIgnore: publicProcedure
+  // 2. CRIAR TRANSAÇÃO MANUALMENTE
+  create: protectedProcedure
+    .input(
+      z.object({
+        description: z.string().min(1, "Descrição é obrigatória"),
+        amount: z.number().positive("Valor deve ser positivo"),
+        transactionType: z.enum(["income", "expense"]),
+        purchaseDate: z.date(),
+        paymentDate: z.date().optional(),
+        accountId: z.number(),
+        categoryId: z.number().optional().nullable(),
+        isInstallment: z.boolean().default(false),
+        installmentNumber: z.number().optional(),
+        installmentTotal: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.db) throw new Error("Database not available");
+      if (!ctx.user) throw new Error("User not authenticated");
+
+      // Validar se a conta existe e pertence ao usuário
+      const account = await ctx.db
+        .select()
+        .from(accounts)
+        .where(and(eq(accounts.id, input.accountId), eq(accounts.userId, ctx.user.id)))
+        .limit(1);
+      
+      if (!account[0]) throw new Error("Conta não encontrada");
+
+      // Validar se a categoria existe e pertence ao usuário (se fornecida)
+      if (input.categoryId) {
+        const category = await ctx.db
+          .select()
+          .from(categories)
+          .where(and(eq(categories.id, input.categoryId), eq(categories.userId, ctx.user.id)))
+          .limit(1);
+        
+        if (!category[0]) throw new Error("Categoria não encontrada");
+      }
+
+      // Validar se é parcela
+      if (input.isInstallment) {
+        if (!input.installmentNumber || !input.installmentTotal) {
+          throw new Error("Número e total de parcelas são obrigatórios");
+        }
+        if (input.installmentNumber < 1 || input.installmentNumber > input.installmentTotal) {
+          throw new Error("Número da parcela inválido");
+        }
+      }
+
+      // Converter valor de reais para centavos (multiplicar por 100)
+      const amountInCents = Math.round(input.amount * 100);
+
+      // Usar paymentDate fornecida ou usar purchaseDate como padrão
+      const paymentDate = input.paymentDate || input.purchaseDate;
+
+      // Inserir a transação
+      const result = await ctx.db.insert(transactions).values({
+        userId: ctx.user.id,
+        accountId: input.accountId,
+        categoryId: input.categoryId || null,
+        description: input.description,
+        amount: amountInCents,
+        transactionType: input.transactionType,
+        purchaseDate: input.purchaseDate,
+        paymentDate: paymentDate,
+        isInstallment: input.isInstallment,
+        installmentNumber: input.installmentNumber || null,
+        installmentTotal: input.installmentTotal || null,
+        source: "manual",
+        classificationMethod: input.categoryId ? "manual" : null,
+        isIgnored: false,
+      });
+
+      return { 
+        success: true, 
+        message: "Transação criada com sucesso!",
+        transactionId: result[0]?.insertId 
+      };
+    }),
+
+  // 3. ALTERNAR IGNORAR
+  toggleIgnore: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const { db } = ctx;
-      const transaction = await db.select().from(transactions).where(eq(transactions.id, input.id)).limit(1);
+      if (!ctx.db) throw new Error("Database not available");
+      if (!ctx.user) throw new Error("User not authenticated");
+
+      const transaction = await ctx.db
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.id, input.id), eq(transactions.userId, ctx.user.id)))
+        .limit(1);
       
       if (!transaction[0]) throw new Error("Transação não encontrada");
 
-      await db.update(transactions)
+      await ctx.db.update(transactions)
         .set({ isIgnored: !transaction[0].isIgnored })
         .where(eq(transactions.id, input.id));
+      
       return { success: true, isIgnored: !transaction[0].isIgnored };
     }),
 
-  // 3. DELETAR
-  delete: publicProcedure
+  // 4. DELETAR
+  delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const { db } = ctx;
-      await db.delete(transactions).where(eq(transactions.id, input.id));
+      if (!ctx.db) throw new Error("Database not available");
+      if (!ctx.user) throw new Error("User not authenticated");
+
+      // Verificar se a transação pertence ao usuário
+      const transaction = await ctx.db
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.id, input.id), eq(transactions.userId, ctx.user.id)))
+        .limit(1);
+      
+      if (!transaction[0]) throw new Error("Transação não encontrada");
+
+      await ctx.db.delete(transactions).where(eq(transactions.id, input.id));
+      return { success: true };
+    }),
+
+  // 5. ATUALIZAR CATEGORIA
+  updateCategory: protectedProcedure
+    .input(z.object({ 
+      id: z.number(),
+      categoryId: z.number().nullable()
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.db) throw new Error("Database not available");
+      if (!ctx.user) throw new Error("User not authenticated");
+
+      // Verificar se a transação pertence ao usuário
+      const transaction = await ctx.db
+        .select()
+        .from(transactions)
+        .where(and(eq(transactions.id, input.id), eq(transactions.userId, ctx.user.id)))
+        .limit(1);
+      
+      if (!transaction[0]) throw new Error("Transação não encontrada");
+
+      // Se categoryId foi fornecido, validar se a categoria existe e pertence ao usuário
+      if (input.categoryId !== null) {
+        const category = await ctx.db
+          .select()
+          .from(categories)
+          .where(and(eq(categories.id, input.categoryId), eq(categories.userId, ctx.user.id)))
+          .limit(1);
+        
+        if (!category[0]) throw new Error("Categoria não encontrada");
+      }
+
+      await ctx.db.update(transactions)
+        .set({ 
+          categoryId: input.categoryId,
+          classificationMethod: "manual"
+        })
+        .where(eq(transactions.id, input.id));
+      
       return { success: true };
     }),
 });

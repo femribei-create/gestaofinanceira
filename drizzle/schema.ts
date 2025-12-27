@@ -233,3 +233,21 @@ export const cardClosingDates = mysqlTable("cardClosingDates", {
 
 export type CardClosingDate = typeof cardClosingDates.$inferSelect;
 export type InsertCardClosingDate = typeof cardClosingDates.$inferInsert;
+export const dreRevenues = mysqlTable("dreRevenues", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  month: int("month").notNull(),
+  year: int("year").notNull(),
+  creditoVista: varchar("creditoVista", { length: 20 }).default("0"),
+  credito2x: varchar("credito2x", { length: 20 }).default("0"),
+  credito3x: varchar("credito3x", { length: 20 }).default("0"),
+  credito4x: varchar("credito4x", { length: 20 }).default("0"),
+  credito5x: varchar("credito5x", { length: 20 }).default("0"),
+  credito6x: varchar("credito6x", { length: 20 }).default("0"),
+  debito: varchar("debito", { length: 20 }).default("0"),
+  dinheiro: varchar("dinheiro", { length: 20 }).default("0"),
+  pix: varchar("pix", { length: 20 }).default("0"),
+  giraCredito: varchar("giraCredito", { length: 20 }).default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});

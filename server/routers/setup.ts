@@ -1,5 +1,6 @@
 /**
  * tRPC Router para setup inicial (categorias, contas, regras)
+ * ATUALIZADO: Adicionados endpoints para gerenciamento de categorias
  */
 
 import { z } from "zod";
@@ -7,12 +8,19 @@ import { protectedProcedure, router } from "../_core/trpc";
 // Imports relativos seguros (../db aponta para server/db.ts)
 import {
   getUserCategories,
-  createCategory,
+  createCategory as dbCreateCategory,
+  updateCategory as dbUpdateCategory,
+  deleteCategory as dbDeleteCategory,
+  getCategoriesWithTransactionCount,
+  getTransactionsByCategory as dbGetTransactionsByCategory,
+  updateTransactionsCategoryBulk,
   getUserAccounts,
   createAccount,
   createClassificationRule,
   getUserClassificationRules,
 } from "../db";
+import { cardClosingDates } from "../../drizzle/schema";
+import { eq, and } from "drizzle-orm";
 import { getDefaultRules } from "../classification";
 
 export const setupRouter = router({
@@ -89,7 +97,7 @@ export const setupRouter = router({
       
       // Criar categorias empresariais
       for (const name of businessCategories) {
-        const category = await createCategory({
+        const category = await dbCreateCategory({
           userId,
           name,
           businessType: "business",
@@ -101,7 +109,7 @@ export const setupRouter = router({
       const impostoId = categoryMap.get("IMPOSTO");
       if (impostoId) {
         for (const sub of impostoSubs) {
-          await createCategory({
+          await dbCreateCategory({
             userId,
             name: "IMPOSTO",
             subcategory: sub,
@@ -114,7 +122,7 @@ export const setupRouter = router({
       const funcionarioId = categoryMap.get("PAGTO FUNCIONÁRIO");
       if (funcionarioId) {
         for (const sub of funcionarioSubs) {
-          await createCategory({
+          await dbCreateCategory({
             userId,
             name: "PAGTO FUNCIONÁRIO",
             subcategory: sub,
@@ -125,7 +133,7 @@ export const setupRouter = router({
       
       // Criar categorias pessoais
       for (const name of personalCategories) {
-        const category = await createCategory({
+        const category = await dbCreateCategory({
           userId,
           name,
           businessType: "personal",
@@ -137,7 +145,7 @@ export const setupRouter = router({
       const saudeId = categoryMap.get("SAÚDE");
       if (saudeId) {
         for (const sub of saudeSubs) {
-          await createCategory({
+          await dbCreateCategory({
             userId,
             name: "SAÚDE",
             subcategory: sub,
@@ -150,7 +158,7 @@ export const setupRouter = router({
       const lazerId = categoryMap.get("LAZER");
       if (lazerId) {
         for (const sub of lazerSubs) {
-          await createCategory({
+          await dbCreateCategory({
             userId,
             name: "LAZER",
             subcategory: sub,
@@ -254,4 +262,274 @@ export const setupRouter = router({
       const userId = ctx.user.id;
       return getUserClassificationRules(userId);
     }),
+    /**
+   * Buscar datas de fechamento configuradas para um cartão em um mês específico
+   */
+  getCardClosingDate: protectedProcedure
+    .input(z.object({
+      accountId: z.number(),
+      year: z.number(),
+      month: z.number(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.user.id;
+      
+      const result = await ctx.db
+        .select()
+        .from(cardClosingDates)
+        .where(
+          and(
+            eq(cardClosingDates.userId, userId),
+            eq(cardClosingDates.accountId, input.accountId),
+            eq(cardClosingDates.year, input.year),
+            eq(cardClosingDates.month, input.month)
+          )
+        )
+        .limit(1);
+      
+      return result[0] || null;
+    }),
+
+  /**
+   * Salvar ou atualizar data de fechamento do cartão
+   */
+  setCardClosingDate: protectedProcedure
+    .input(z.object({
+      accountId: z.number(),
+      year: z.number(),
+      month: z.number(),
+      closingDate: z.date(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.user.id;
+      
+      // Verificar se já existe
+      const existing = await ctx.db
+        .select()
+        .from(cardClosingDates)
+        .where(
+          and(
+            eq(cardClosingDates.userId, userId),
+            eq(cardClosingDates.accountId, input.accountId),
+            eq(cardClosingDates.year, input.year),
+            eq(cardClosingDates.month, input.month)
+          )
+        )
+        .limit(1);
+      
+      if (existing.length > 0) {
+        // Atualizar
+        await ctx.db
+          .update(cardClosingDates)
+          .set({ closingDate: input.closingDate })
+          .where(eq(cardClosingDates.id, existing[0].id));
+      } else {
+        // Inserir
+        await ctx.db
+          .insert(cardClosingDates)
+          .values({
+            userId,
+            accountId: input.accountId,
+            year: input.year,
+            month: input.month,
+            closingDate: input.closingDate,
+          });
+      }
+      
+      return { success: true };
+    }),
+
+  /**
+   * Listar todas as datas de fechamento de um usuário
+   */
+  listCardClosingDates: protectedProcedure
+    .input(z.object({
+      accountId: z.number().optional(),
+      year: z.number().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      let query = ctx.db
+        .select()
+        .from(cardClosingDates)
+        .where(eq(cardClosingDates.userId, ctx.user.id));
+      
+      if (input.accountId) {
+        query = query.where(eq(cardClosingDates.accountId, input.accountId));
+      }
+      
+      if (input.year) {
+        query = query.where(eq(cardClosingDates.year, input.year));
+      }
+      
+      return await query;
+    }),
+
+  // ===== NOVOS ENDPOINTS PARA GERENCIAMENTO DE CATEGORIAS =====
+
+  /**
+   * Listar categorias com contagem de transações
+   * Mostra quantas transações cada categoria tem
+   */
+  getCategoriesWithCount: protectedProcedure
+    .input(
+      z.object({
+        businessType: z.enum(["personal", "business"]).optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.user.id;
+      const businessType = input?.businessType;
+
+      return await getCategoriesWithTransactionCount(userId, businessType);
+    }),
+
+  /**
+   * Criar uma nova categoria
+   */
+  createNewCategory: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().min(1, "Category name is required"),
+        subcategory: z.string().optional(),
+        businessType: z.enum(["personal", "business"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.user.id;
+
+      const newCategory = await dbCreateCategory({
+        userId,
+        name: input.name,
+        subcategory: input.subcategory || null,
+        businessType: input.businessType,
+      });
+
+      return newCategory;
+    }),
+
+  /**
+   * Editar uma categoria existente
+   * Atualiza o nome e/ou subcategoria e todas as transações associadas
+   */
+  updateExistingCategory: protectedProcedure
+    .input(
+      z.object({
+        categoryId: z.number(),
+        name: z.string().min(1).optional(),
+        subcategory: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.user.id;
+      const { categoryId, name, subcategory } = input;
+
+      // Verificar se a categoria pertence ao usuário
+      const categories = await getUserCategories(userId);
+      const category = categories.find((c) => c.id === categoryId);
+
+      if (!category) {
+        throw new Error("Category not found or does not belong to this user");
+      }
+
+      // Preparar os updates
+      const updates: { name?: string; subcategory?: string | null } = {};
+      if (name) updates.name = name;
+      if (subcategory !== undefined) updates.subcategory = subcategory || null;
+
+      // Se não há nada para atualizar, retornar erro
+      if (Object.keys(updates).length === 0) {
+        throw new Error("No fields to update");
+      }
+
+      const updatedCategory = await dbUpdateCategory(categoryId, updates);
+
+      return updatedCategory;
+    }),
+
+  /**
+   * Deletar uma categoria
+   * Impede deleção se houver transações usando essa categoria
+   */
+  deleteExistingCategory: protectedProcedure
+    .input(
+      z.object({
+        categoryId: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.user.id;
+      const { categoryId } = input;
+
+      // Verificar se a categoria pertence ao usuário
+      const categories = await getUserCategories(userId);
+      const category = categories.find((c) => c.id === categoryId);
+
+      if (!category) {
+        throw new Error("Category not found or does not belong to this user");
+      }
+
+      try {
+        await dbDeleteCategory(categoryId);
+        return { success: true, message: "Category deleted successfully" };
+      } catch (error: any) {
+        throw new Error(error.message);
+      }
+    }),
+
+  /**
+   * Obter transações de uma categoria
+   * Retorna todas as transações que usam uma categoria específica
+   */
+  getCategoryTransactions: protectedProcedure
+    .input(
+      z.object({
+        categoryId: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.user.id;
+      const { categoryId } = input;
+
+      // Verificar se a categoria pertence ao usuário
+      const categories = await getUserCategories(userId);
+      const category = categories.find((c) => c.id === categoryId);
+
+      if (!category) {
+        throw new Error("Category not found or does not belong to this user");
+      }
+
+      return await dbGetTransactionsByCategory(userId, categoryId);
+    }),
+
+  /**
+   * Mover múltiplas transações para uma nova categoria
+   * Usado quando o usuário quer reatribuir transações
+   */
+  moveTransactionsToCategory: protectedProcedure
+    .input(
+      z.object({
+        transactionIds: z.array(z.number()).min(1, "At least one transaction is required"),
+        newCategoryId: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.user.id;
+      const { transactionIds, newCategoryId } = input;
+
+      // Verificar se a nova categoria pertence ao usuário
+      const categories = await getUserCategories(userId);
+      const newCategory = categories.find((c) => c.id === newCategoryId);
+
+      if (!newCategory) {
+        throw new Error("Target category not found or does not belong to this user");
+      }
+
+      await updateTransactionsCategoryBulk(transactionIds, newCategoryId);
+
+      return {
+        success: true,
+        message: `${transactionIds.length} transaction(s) moved successfully`,
+      };
+    }),
+
 });

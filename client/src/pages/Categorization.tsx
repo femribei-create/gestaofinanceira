@@ -20,9 +20,11 @@ export default function Categorization() {
     exactAmount: "" as string,
     minAmount: "" as string,
     maxAmount: "" as string,
+    accountId: "" as string, // Novo campo para banco
   });
 
   const { data: categories } = trpc.setup.listCategories.useQuery({});
+  const { data: accounts } = trpc.setup.listAccounts.useQuery(); // Novo: carregar contas
   const { data: rules, refetch: refetchRules } = trpc.categorization.listRules.useQuery();
   const { data: history, refetch: refetchHistory } = trpc.categorization.listLearningHistory.useQuery();
 
@@ -35,7 +37,8 @@ export default function Categorization() {
       priority: 0,
       exactAmount: "",
       minAmount: "",
-      maxAmount: ""
+      maxAmount: "",
+      accountId: "" // Reset do novo campo
     });
     setEditingId(null);
   };
@@ -101,6 +104,7 @@ export default function Categorization() {
       exactAmount: exact,
       minAmount: min,
       maxAmount: max,
+      accountId: rule.accountId ? rule.accountId.toString() : "", // Novo campo
     });
 
     // Rolar a página para o topo para ver o formulário
@@ -142,6 +146,7 @@ export default function Categorization() {
       priority: formData.priority,
       minAmount: minFinal,
       maxAmount: maxFinal,
+      accountId: formData.accountId ? parseInt(formData.accountId) : undefined, // Novo campo
     };
 
     if (editingId) {
@@ -282,6 +287,24 @@ export default function Categorization() {
                   </div>
                 </div>
 
+                {/* Novo: Filtro de Banco */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Banco (Opcional)</label>
+                  <select
+                    value={formData.accountId}
+                    onChange={(e) => setFormData({ ...formData, accountId: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  >
+                    <option value="">Todos os bancos</option>
+                    {accounts?.map((account: any) => (
+                      <option key={account.id} value={account.id.toString()}>
+                        {account.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500">Deixe em branco para aplicar a regra em todos os bancos</p>
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Classificar como:</label>
                   <select
@@ -405,14 +428,50 @@ export default function Categorization() {
         )}
 
         {activeTab === "history" && (
-           <Card>
-             <CardHeader>
-               <CardTitle>Histórico de Aprendizado</CardTitle>
-             </CardHeader>
-             <CardContent>
-               <p className="text-gray-500 text-center py-8">Histórico de aprendizado da IA e correções manuais.</p>
-             </CardContent>
-           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Histórico de Aprendizado</CardTitle>
+              <CardDescription>Padrões aprendidos pela IA e correções manuais</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+              {history && history.length > 0 ? (
+                history.map((item: any) => (
+                  <div key={item.id} className="border rounded-lg p-4 hover:bg-gray-50 border-gray-200 transition-colors">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold bg-purple-100 px-2 py-0.5 rounded text-purple-800">PADRÃO</span>
+                          <span className="text-sm text-gray-900 font-medium bg-purple-50 px-2 py-1 rounded border border-purple-200">
+                            {item.pattern}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                          <span className="font-semibold">Categoria:</span>
+                          <span className="bg-blue-50 px-2 py-0.5 rounded border border-blue-200">{item.categoryName}</span>
+                        </div>
+                        {item.description && (
+                          <div className="text-xs text-gray-600 italic">
+                            <span className="font-semibold">Descrição:</span> {item.description}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteHistoryMutation.mutate({ patternId: item.id })}
+                        className="text-gray-400 hover:text-red-600 hover:bg-red-50 flex-shrink-0"
+                        title="Deletar padrão"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-gray-500 text-center py-8">Nenhum padrão aprendido ainda.</p>
+              )}
+            </CardContent>
+          </Card>
         )}
       </div>
     </DashboardLayout>

@@ -1,7 +1,6 @@
 import { getDb } from "./db";
 import { classificationRules, classificationHistory, transactions, categories, accounts } from "../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-// CORREÇÃO AQUI: Mudamos de ".." para "." pois estão na mesma pasta
 import { applyRules, classifyTransaction } from "./classification"; 
 
 /**
@@ -18,13 +17,12 @@ export async function createOrUpdateRule(
   categoryId: number,
   transactionType: "income" | "expense",
   priority: number,
-  minAmount?: number, // Novo campo
-  maxAmount?: number  // Novo campo
+  minAmount?: number, 
+  maxAmount?: number
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // Prepara os dados para salvar
   const data = {
     userId,
     pattern,
@@ -32,20 +30,17 @@ export async function createOrUpdateRule(
     categoryId,
     transactionType,
     priority,
-    // Garante que se for undefined vira null (para o banco aceitar)
     minAmount: minAmount || null, 
     maxAmount: maxAmount || null,
     isActive: true,
   };
 
   if (ruleId) {
-    // Atualizar existente
     await db
       .update(classificationRules)
       .set(data)
       .where(and(eq(classificationRules.id, ruleId), eq(classificationRules.userId, userId)));
   } else {
-    // Criar nova
     await db.insert(classificationRules).values(data);
   }
 }
@@ -57,7 +52,7 @@ export async function deleteRule(ruleId: number) {
   await db.delete(classificationRules).where(eq(classificationRules.id, ruleId));
 }
 
-// 3. Listar Regras (Para aparecer na tela)
+// 3. Listar Regras
 export async function getUserRules(userId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -72,7 +67,6 @@ export async function getUserRules(userId: number) {
       subcategoryName: categories.subcategory,
       transactionType: classificationRules.transactionType,
       priority: classificationRules.priority,
-      // Importante: Trazer os valores do banco
       minAmount: classificationRules.minAmount,
       maxAmount: classificationRules.maxAmount,
     })
@@ -121,14 +115,9 @@ export async function categorizeTransaction(userId: number, description: string,
     const db = await getDb();
     if (!db) throw new Error("DB Error");
 
-    // Busca as regras já formatadas
     const userRules = await getUserRules(userId);
-    
-    // Busca categorias para IA
     const allCategories = await db.select().from(categories).where(eq(categories.userId, userId));
 
-    // Chama a função de classificação passando o amount
-    // Usamos 'as any' para contornar checagens estritas de tipo do objeto Date, focando na lógica
     return await classifyTransaction(
         userId, 
         { description, amount, date: new Date() } as any, 

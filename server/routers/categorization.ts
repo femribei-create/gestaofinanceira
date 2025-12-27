@@ -24,6 +24,8 @@ export const categorizationRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) throw new Error("User not authenticated");
+      
       try {
         const result = await categorizeTransaction(
           ctx.user.id,
@@ -71,6 +73,8 @@ export const categorizationRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) throw new Error("User not authenticated");
+      
       await learnFromCorrection(ctx.user.id, input.description, input.categoryId);
       return { success: true };
     }),
@@ -79,6 +83,8 @@ export const categorizationRouter = router({
    * Listar regras do usuário
    */
   listRules: protectedProcedure.query(async ({ ctx }) => {
+    if (!ctx.user) throw new Error("User not authenticated");
+    
     return getUserRules(ctx.user.id);
   }),
 
@@ -86,6 +92,8 @@ export const categorizationRouter = router({
    * Listar histórico de aprendizado
    */
   listLearningHistory: protectedProcedure.query(async ({ ctx }) => {
+    if (!ctx.user) throw new Error("User not authenticated");
+    
     return getUserLearningHistory(ctx.user.id);
   }),
 
@@ -100,11 +108,13 @@ export const categorizationRouter = router({
         categoryId: z.number(),
         transactionType: z.enum(["income", "expense"]),
         priority: z.number().default(0),
-        minAmount: z.number().optional(), // Novo
-        maxAmount: z.number().optional(), // Novo
+        minAmount: z.number().optional(),
+        maxAmount: z.number().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) throw new Error("User not authenticated");
+      
       await createOrUpdateRule(
         ctx.user.id,
         null,
@@ -131,11 +141,13 @@ export const categorizationRouter = router({
         categoryId: z.number(),
         transactionType: z.enum(["income", "expense"]),
         priority: z.number().default(0),
-        minAmount: z.number().optional(), // Novo
-        maxAmount: z.number().optional(), // Novo
+        minAmount: z.number().optional(),
+        maxAmount: z.number().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) throw new Error("User not authenticated");
+      
       await createOrUpdateRule(
         ctx.user.id,
         input.ruleId,
@@ -155,7 +167,9 @@ export const categorizationRouter = router({
    */
   deleteRule: protectedProcedure
     .input(z.object({ ruleId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) throw new Error("User not authenticated");
+      
       await deleteRule(input.ruleId);
       return { success: true };
     }),
@@ -165,7 +179,9 @@ export const categorizationRouter = router({
    */
   deleteHistoryPattern: protectedProcedure
     .input(z.object({ patternId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) throw new Error("User not authenticated");
+      
       await deleteHistoryPattern(input.patternId);
       return { success: true };
     }),

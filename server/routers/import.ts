@@ -19,6 +19,52 @@ import {
   createAccount,
 } from "../db";
 import type { InsertTransaction } from "../../drizzle/schema";
+import { cardClosingDates } from "../../drizzle/schema";
+import { eq, and } from "drizzle-orm";
+
+/**
+ * Calcula a data de pagamento correta para uma transação
+ * Se for parcela de cartão, usa a data de fechamento configurada
+ * Senão, usa a data da transação
+ */
+async function calculatePaymentDate(
+  transaction: ParsedTransaction,
+  accountId: number,
+  userId: number,
+  db: any
+): Promise<Date> {
+  // Se não for parcela, retorna a data da transação
+  if (!transaction.isInstallment) {
+    return transaction.paymentDate;
+  }
+
+  // Se for parcela, busca a data de fechamento configurada
+  const purchaseDate = transaction.originalPurchaseDate || transaction.purchaseDate;
+  const year = purchaseDate.getFullYear();
+  const month = purchaseDate.getMonth() + 1; // getMonth() retorna 0-11
+
+  // Buscar data de fechamento configurada para este mês
+  const closingDateRecord = await db
+    .select()
+    .from(cardClosingDates)
+    .where(
+      and(
+        eq(cardClosingDates.userId, userId),
+        eq(cardClosingDates.accountId, accountId),
+        eq(cardClosingDates.year, year),
+        eq(cardClosingDates.month, month)
+      )
+    )
+    .limit(1);
+
+  if (closingDateRecord.length > 0) {
+    // Usa a data de fechamento configurada
+    return new Date(closingDateRecord[0].closingDate);
+  }
+
+  // Se não encontrar configuração, usa a data original (comportamento padrão)
+  return transaction.paymentDate;
+}
 
 export const importRouter = router({
   /**
@@ -72,6 +118,10 @@ export const importRouter = router({
       const categories = await getUserCategories(userId);
       const rules = await getUserClassificationRules(userId);
       
+      // Buscar informações da conta para aplicar regras específicas
+      const accounts = await getUserAccounts(userId);
+      const currentAccount = accounts.find(acc => acc.id === input.accountId);
+      
       // Classificar transações (Usando a lista limpa)
       const classifications = await classifyTransactionsBatch(
         userId,
@@ -80,6 +130,24 @@ export const importRouter = router({
         rules,
         categories
       );
+      
+      // Aplicar regras específicas por conta
+      if (currentAccount?.name.toLowerCase().includes('sangria')) {
+        // Todas as transações do Sangria devem ser PIX DESAPEGO
+        const pixDesapegoCategory = categories.find(cat => 
+          cat.name.toUpperCase() === 'PIX DESAPEGO'
+        );
+        
+        if (pixDesapegoCategory) {
+          classifications.forEach((classification, index) => {
+            classifications[index] = {
+              categoryId: pixDesapegoCategory.id,
+              method: "rule",
+              confidence: 100,
+            };
+          });
+        }
+      }
       
       // Combinar resultados (Usando a lista limpa)
       const transactionsWithMetadata = cleanTransactions.map((trx, index) => {
@@ -156,28 +224,57 @@ export const importRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.user.id;
       
-      const transactionsToInsert: InsertTransaction[] = input.transactions.map(trx => ({
-        userId,
-        accountId: input.accountId,
-        categoryId: trx.categoryId,
-        description: trx.description,
-        // Garante sinal correto: Despesa é negativo, Receita é positivo
-        amount: trx.transactionType === "expense" ? -Math.abs(trx.amount) : Math.abs(trx.amount),
-        transactionType: trx.transactionType,
-        purchaseDate: new Date(trx.purchaseDate),
-        paymentDate: new Date(trx.paymentDate),
-        isInstallment: trx.isInstallment,
-        installmentNumber: trx.installmentNumber,
-        installmentTotal: trx.installmentTotal,
-        originalPurchaseDate: trx.originalPurchaseDate ? new Date(trx.originalPurchaseDate) : undefined,
-        source: trx.source,
-        sourceFile: trx.sourceFile,
-        suggestedCategoryId: trx.suggestedCategoryId,
-        classificationMethod: trx.classificationMethod,
-        isDuplicate: false,
-        duplicateStatus: "approved",
-        fitId: trx.fitId,
-      }));
+      // Processar transações com cálculo correto de paymentDate
+      const transactionsToInsert: InsertTransaction[] = await Promise.all(
+        input.transactions.map(async (trx) => {
+          // Criar objeto temporário para calcular paymentDate
+          const tempTransaction: ParsedTransaction = {
+            description: trx.description,
+            amount: trx.amount,
+            transactionType: trx.transactionType,
+            purchaseDate: new Date(trx.purchaseDate),
+            paymentDate: new Date(trx.paymentDate),
+            isInstallment: trx.isInstallment,
+            installmentNumber: trx.installmentNumber,
+            installmentTotal: trx.installmentTotal,
+            originalPurchaseDate: trx.originalPurchaseDate ? new Date(trx.originalPurchaseDate) : undefined,
+            fitId: trx.fitId,
+            source: trx.source,
+            sourceFile: trx.sourceFile,
+          };
+
+          // Calcular paymentDate correto (considerando data de fechamento)
+          const correctPaymentDate = await calculatePaymentDate(
+            tempTransaction,
+            input.accountId,
+            userId,
+            ctx.db
+          );
+
+          return {
+            userId,
+            accountId: input.accountId,
+            categoryId: trx.categoryId,
+            description: trx.description,
+            // Garante sinal correto: Despesa é negativo, Receita é positivo
+            amount: trx.transactionType === "expense" ? -Math.abs(trx.amount) : Math.abs(trx.amount),
+            transactionType: trx.transactionType,
+            purchaseDate: new Date(trx.purchaseDate),
+            paymentDate: correctPaymentDate,
+            isInstallment: trx.isInstallment,
+            installmentNumber: trx.installmentNumber,
+            installmentTotal: trx.installmentTotal,
+            originalPurchaseDate: trx.originalPurchaseDate ? new Date(trx.originalPurchaseDate) : undefined,
+            source: trx.source,
+            sourceFile: trx.sourceFile,
+            suggestedCategoryId: trx.suggestedCategoryId,
+            classificationMethod: trx.classificationMethod,
+            isDuplicate: false,
+            duplicateStatus: "approved",
+            fitId: trx.fitId,
+          };
+        })
+      );
       
       await createTransactionsBulk(transactionsToInsert);
       
@@ -186,7 +283,7 @@ export const importRouter = router({
         count: transactionsToInsert.length,
       };
     }),
-  
+
   /**
    * Upload e importação de CSV de faturamento
    */

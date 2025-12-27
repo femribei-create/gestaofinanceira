@@ -10,6 +10,10 @@ import Transactions from "./pages/Transactions";
 import DRE from "./pages/DRE";
 import Import from "./pages/Import";
 import Setup from "./pages/Setup";
+import AddTransaction from "./pages/AddTransaction";
+import CardClosingDates from "./pages/CardClosingDates";
+import PersonalDashboard from "./pages/PersonalDashboard";
+import CategoriesManagement from "./pages/CategoriesManagement";
 import { trpc } from "./lib/trpc";
 import { useEffect } from "react";
 
@@ -50,9 +54,13 @@ function Router() {
       <Route path={"/setup"} component={Setup} />
       <Route path={"/"} component={Home} />
       <Route path={"/categorization"} component={Categorization} />
+      <Route path={"/categories"} component={CategoriesManagement} />
       <Route path={"/transactions"} component={Transactions} />
       <Route path={"/dre"} component={DRE} />
       <Route path={"/import"} component={Import} />
+      <Route path={"/add-transaction"} component={AddTransaction} />
+      <Route path={"/card-closing-dates"} component={CardClosingDates} />
+      <Route path={"/personal-dashboard"} component={PersonalDashboard} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

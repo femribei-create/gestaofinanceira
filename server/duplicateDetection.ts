@@ -3,6 +3,7 @@
  * Compara transações por Data + Valor + Descrição similar
  */
 
+// CORREÇÃO: Garantindo caminho relativo para o Schema
 import type { Transaction } from "../drizzle/schema";
 import type { ParsedTransaction } from "./parsers";
 
@@ -47,8 +48,8 @@ function calculateStringSimilarity(str1: string, str2: string): number {
       const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
       
       matrix[i]![j] = Math.min(
-        matrix[i - 1]![j]! + 1,      // Deleção
-        matrix[i]![j - 1]! + 1,      // Inserção
+        matrix[i - 1]![j]! + 1,       // Deleção
+        matrix[i]![j - 1]! + 1,       // Inserção
         matrix[i - 1]![j - 1]! + cost // Substituição
       );
     }

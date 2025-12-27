@@ -3,11 +3,13 @@ import type { User } from "../../drizzle/schema";
 import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
+  db: any | null;
 };
 
 /**
@@ -60,17 +62,21 @@ export async function createContext(
 ): Promise<TrpcContext> {
   // Para Railway: sempre usar usuário padrão
   let user: User | null = null;
+  let db = null;
 
   try {
     user = await getOrCreateDefaultUser();
+    db = await getDb();
   } catch (error) {
-    console.error("Failed to get/create default user:", error);
+    console.error("Failed to get/create default user or database:", error);
     user = null;
+    db = null;
   }
 
   return {
     req: opts.req,
     res: opts.res,
     user,
+    db,
   };
 }
