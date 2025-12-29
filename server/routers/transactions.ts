@@ -211,4 +211,154 @@ export const transactionsRouter = router({
       
       return { success: true };
     }),
+
+  // 6. ATUALIZAR MÚLTIPLAS TRANSAÇÕES EM LOTE
+  bulkUpdate: protectedProcedure
+    .input(z.object({
+      ids: z.array(z.number()),
+      updates: z.object({
+        categoryId: z.number().nullable().optional(),
+        accountId: z.number().optional(),
+        purchaseDate: z.date().optional(),
+      })
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.db) throw new Error("Database not available");
+      if (!ctx.user) throw new Error("User not authenticated");
+
+      if (input.ids.length === 0) throw new Error("Nenhuma transação selecionada");
+
+      // Validar se todas as transações pertencem ao usuário
+      const userTransactions = await ctx.db
+        .select()
+        .from(transactions)
+        .where(and(
+          eq(transactions.userId, ctx.user.id),
+          eq(transactions.id, input.ids[0])
+        ));
+
+      if (!userTransactions[0]) throw new Error("Transações não encontradas");
+
+      // Validar categoria se fornecida
+      if (input.updates.categoryId !== undefined && input.updates.categoryId !== null) {
+        const category = await ctx.db
+          .select()
+          .from(categories)
+          .where(and(eq(categories.id, input.updates.categoryId), eq(categories.userId, ctx.user.id)))
+          .limit(1);
+        
+        if (!category[0]) throw new Error("Categoria não encontrada");
+      }
+
+      // Validar banco se fornecido
+      if (input.updates.accountId) {
+        const account = await ctx.db
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.id, input.updates.accountId), eq(accounts.userId, ctx.user.id)))
+          .limit(1);
+        
+        if (!account[0]) throw new Error("Conta não encontrada");
+      }
+
+      // Preparar dados de atualização
+      const updateData: any = {};
+      
+      if (input.updates.categoryId !== undefined) {
+        updateData.categoryId = input.updates.categoryId;
+        if (input.updates.categoryId !== null) {
+          updateData.classificationMethod = "manual";
+        }
+      }
+      
+      if (input.updates.accountId !== undefined) {
+        updateData.accountId = input.updates.accountId;
+      }
+      
+      if (input.updates.purchaseDate !== undefined) {
+        updateData.purchaseDate = input.updates.purchaseDate;
+      }
+
+      // Atualizar todas as transações
+      await ctx.db.update(transactions)
+        .set(updateData)
+        .where(and(
+          eq(transactions.userId, ctx.user.id),
+          eq(transactions.id, input.ids[0])
+        ));
+
+      // Atualizar as demais transações individualmente
+      for (const id of input.ids.slice(1)) {
+        await ctx.db.update(transactions)
+          .set(updateData)
+          .where(eq(transactions.id, id));
+      }
+
+      return { success: true, updatedCount: input.ids.length };
+    }),
+
+  // 7. DELETAR MÚLTIPLAS TRANSAÇÕES EM LOTE
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()) }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.db) throw new Error("Database not available");
+      if (!ctx.user) throw new Error("User not authenticated");
+
+      if (input.ids.length === 0) throw new Error("Nenhuma transação selecionada");
+
+      // Validar se todas as transações pertencem ao usuário
+      const userTransactions = await ctx.db
+        .select()
+        .from(transactions)
+        .where(and(
+          eq(transactions.userId, ctx.user.id),
+          eq(transactions.id, input.ids[0])
+        ));
+
+      if (!userTransactions[0]) throw new Error("Transações não encontradas");
+
+      // Deletar todas as transações
+      for (const id of input.ids) {
+        await ctx.db.delete(transactions)
+          .where(and(
+            eq(transactions.id, id),
+            eq(transactions.userId, ctx.user.id)
+          ));
+      }
+
+      return { success: true, deletedCount: input.ids.length };
+    }),
+
+  // 8. ALTERNAR IGNORAR MÚLTIPLAS TRANSAÇÕES EM LOTE
+  bulkToggleIgnore: protectedProcedure
+    .input(z.object({ 
+      ids: z.array(z.number()),
+      ignore: z.boolean()
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.db) throw new Error("Database not available");
+      if (!ctx.user) throw new Error("User not authenticated");
+
+      if (input.ids.length === 0) throw new Error("Nenhuma transação selecionada");
+
+      // Validar se todas as transações pertencem ao usuário
+      const userTransactions = await ctx.db
+        .select()
+        .from(transactions)
+        .where(and(
+          eq(transactions.userId, ctx.user.id),
+          eq(transactions.id, input.ids[0])
+        ));
+
+      if (!userTransactions[0]) throw new Error("Transações não encontradas");
+
+      // Atualizar todas as transações
+      for (const id of input.ids) {
+        await ctx.db.update(transactions)
+          .set({ isIgnored: input.ignore })
+          .where(eq(transactions.id, id));
+      }
+
+      return { success: true, updatedCount: input.ids.length };
+    }),
 });

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -29,7 +30,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowUpCircle, ArrowDownCircle, Loader2, Pencil, Search, Filter, X, Trash2, Eye, EyeOff } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, Loader2, Pencil, Search, Filter, X, Trash2, Eye, EyeOff, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Transaction {
@@ -50,6 +51,15 @@ interface Transaction {
 export default function Transactions() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+
+  // --- Estados para edição em lote ---
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
+  const [bulkEditForm, setBulkEditForm] = useState({
+    categoryId: "",
+    accountId: "",
+    purchaseDate: "",
+  });
 
   // --- Estados dos Filtros ---
   const [searchText, setSearchText] = useState("");
@@ -117,6 +127,36 @@ export default function Transactions() {
     onError: (error) => toast.error(`Erro: ${error.message}`),
   });
 
+  // --- Mutações para edição em lote ---
+  const bulkUpdateMutation = trpc.transactions.bulkUpdate.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.updatedCount} transações atualizadas!`);
+      refetch();
+      setShowBulkEditDialog(false);
+      setSelectedIds(new Set());
+      setBulkEditForm({ categoryId: "", accountId: "", purchaseDate: "" });
+    },
+    onError: (error) => toast.error(`Erro: ${error.message}`),
+  });
+
+  const bulkDeleteMutation = trpc.transactions.bulkDelete.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.deletedCount} transações excluídas!`);
+      refetch();
+      setSelectedIds(new Set());
+    },
+    onError: (error) => toast.error(`Erro: ${error.message}`),
+  });
+
+  const bulkToggleIgnoreMutation = trpc.transactions.bulkToggleIgnore.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.updatedCount} transações atualizadas!`);
+      refetch();
+      setSelectedIds(new Set());
+    },
+    onError: (error) => toast.error(`Erro: ${error.message}`),
+  });
+
   // Funções Auxiliares de Exibição
   const getCategoryName = (categoryId: number | null) => {
     if (!categoryId) return "Sem categoria";
@@ -172,6 +212,77 @@ export default function Transactions() {
     setFilterStatus("active");
   };
 
+  // --- Funções auxiliares para edição em lote ---
+  const toggleSelectTransaction = (id: number) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === transactions?.length) {
+      setSelectedIds(new Set());
+    } else {
+      const allIds: Set<number> = new Set((transactions?.map((t: Transaction) => t.id) as number[]) || []);
+      setSelectedIds(allIds);
+    }
+  };
+
+  const handleBulkUpdate = () => {
+    if (selectedIds.size === 0) {
+      toast.error("Selecione pelo menos uma transação");
+      return;
+    }
+
+    const updates: any = {};
+    if (bulkEditForm.categoryId) {
+      updates.categoryId = parseInt(bulkEditForm.categoryId);
+    }
+    if (bulkEditForm.accountId) {
+      updates.accountId = parseInt(bulkEditForm.accountId);
+    }
+    if (bulkEditForm.purchaseDate) {
+      updates.purchaseDate = new Date(bulkEditForm.purchaseDate);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      toast.error("Selecione pelo menos um campo para atualizar");
+      return;
+    }
+
+    bulkUpdateMutation.mutate({
+      ids: Array.from(selectedIds),
+      updates,
+    });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) {
+      toast.error("Selecione pelo menos uma transação");
+      return;
+    }
+
+    if (confirm(`Tem certeza que deseja excluir ${selectedIds.size} transação(ões)? Essa ação não pode ser desfeita.`)) {
+      bulkDeleteMutation.mutate({ ids: Array.from(selectedIds) });
+    }
+  };
+
+  const handleBulkToggleIgnore = (ignore: boolean) => {
+    if (selectedIds.size === 0) {
+      toast.error("Selecione pelo menos uma transação");
+      return;
+    }
+
+    bulkToggleIgnoreMutation.mutate({
+      ids: Array.from(selectedIds),
+      ignore,
+    });
+  };
+
   const hasActiveFilters =
     searchText || filterAccountId || filterCategoryId || filterStartDate || filterEndDate || filterStatus !== "active";
 
@@ -183,13 +294,20 @@ export default function Transactions() {
             <h1 className="text-3xl font-bold">Transações</h1>
             <p className="text-muted-foreground">Visualize, filtre e edite suas transações</p>
           </div>
-          <Button
-            variant={showFilters ? "default" : "outline"}
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <Filter className="w-4 h-4 mr-2" />
-            {showFilters ? "Ocultar Filtros" : "Mostrar Filtros"}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant={showFilters ? "default" : "outline"}
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter className="w-4 h-4 mr-2" />
+              {showFilters ? "Ocultar Filtros" : "Mostrar Filtros"}
+            </Button>
+            {selectedIds.size > 0 && (
+              <Button variant="outline" className="text-blue-600 hover:text-blue-700">
+                {selectedIds.size} selecionada(s)
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Filtros */}
@@ -301,6 +419,64 @@ export default function Transactions() {
           </Card>
         )}
 
+        {/* Barra de ações em lote */}
+        {selectedIds.size > 0 && (
+          <Card className="border-blue-300 bg-blue-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <p className="font-medium text-sm">
+                  {selectedIds.size} transação(ões) selecionada(s)
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowBulkEditDialog(true)}
+                    className="text-blue-600 hover:text-blue-700"
+                  >
+                    <Settings2 className="w-4 h-4 mr-2" />
+                    Editar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleBulkToggleIgnore(true)}
+                    className="text-yellow-600 hover:text-yellow-700"
+                  >
+                    <EyeOff className="w-4 h-4 mr-2" />
+                    Ocultar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleBulkToggleIgnore(false)}
+                    className="text-yellow-600 hover:text-yellow-700"
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    Mostrar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleBulkDelete}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Deletar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Desselecionar
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Tabela de Transações */}
         <Card>
           <CardHeader>
@@ -314,6 +490,12 @@ export default function Transactions() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedIds.size > 0 && selectedIds.size === transactions.length}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
                       <TableHead>Data</TableHead>
                       <TableHead>Descrição</TableHead>
                       <TableHead>Banco</TableHead>
@@ -326,8 +508,14 @@ export default function Transactions() {
                     {transactions.map((transaction: Transaction) => (
                       <TableRow
                         key={transaction.id}
-                        className={transaction.isIgnored ? "opacity-50" : ""}
+                        className={`${transaction.isIgnored ? "opacity-50" : ""} ${selectedIds.has(transaction.id) ? "bg-blue-50" : ""}`}
                       >
+                        <TableCell className="w-12">
+                          <Checkbox
+                            checked={selectedIds.has(transaction.id)}
+                            onCheckedChange={() => toggleSelectTransaction(transaction.id)}
+                          />
+                        </TableCell>
                         <TableCell className="text-xs whitespace-nowrap">
                           {format(new Date(transaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })}
                         </TableCell>
@@ -458,6 +646,95 @@ export default function Transactions() {
                     </>
                   ) : (
                     "Salvar"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog Modal para Editar em Lote */}
+        <Dialog open={showBulkEditDialog} onOpenChange={setShowBulkEditDialog}>
+          <DialogContent className="sm:max-w-md !fixed !top-1/2 !left-1/2 !transform !-translate-x-1/2 !-translate-y-1/2 !z-50" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 9999 }}>
+            <DialogHeader>
+              <DialogTitle>Editar em Lote</DialogTitle>
+              <DialogDescription>
+                Atualize {selectedIds.size} transação(ões) selecionada(s)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Campo: Data */}
+              <div className="space-y-2">
+                <Label htmlFor="bulk-date">Data (opcional)</Label>
+                <Input
+                  id="bulk-date"
+                  type="date"
+                  value={bulkEditForm.purchaseDate}
+                  onChange={(e) =>
+                    setBulkEditForm({ ...bulkEditForm, purchaseDate: e.target.value })
+                  }
+                />
+              </div>
+
+              {/* Campo: Banco */}
+              <div className="space-y-2">
+                <Label htmlFor="bulk-account">Banco (opcional)</Label>
+                <Select value={bulkEditForm.accountId} onValueChange={(val) =>
+                  setBulkEditForm({ ...bulkEditForm, accountId: val })
+                }>
+                  <SelectTrigger id="bulk-account">
+                    <SelectValue placeholder="Selecione um banco" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts?.map((account) => (
+                      <SelectItem key={account.id} value={account.id.toString()}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Campo: Categoria */}
+              <div className="space-y-2">
+                <Label htmlFor="bulk-category">Categoria (opcional)</Label>
+                <Select value={bulkEditForm.categoryId} onValueChange={(val) =>
+                  setBulkEditForm({ ...bulkEditForm, categoryId: val })
+                }>
+                  <SelectTrigger id="bulk-category">
+                    <SelectValue placeholder="Selecione uma categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories?.map((category) => (
+                      <SelectItem key={category.id} value={category.id.toString()}>
+                        {category.subcategory ? `${category.name} > ${category.subcategory}` : category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowBulkEditDialog(false);
+                    setBulkEditForm({ categoryId: "", accountId: "", purchaseDate: "" });
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleBulkUpdate}
+                  disabled={bulkUpdateMutation.isPending}
+                >
+                  {bulkUpdateMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Atualizando...
+                    </>
+                  ) : (
+                    "Aplicar"
                   )}
                 </Button>
               </div>
