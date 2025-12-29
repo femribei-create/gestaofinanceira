@@ -51,6 +51,7 @@ interface Transaction {
 export default function Transactions() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
+  const [categorySearchText, setCategorySearchText] = useState<string>("");
 
   // --- Estados para edição em lote ---
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -182,6 +183,32 @@ export default function Transactions() {
   const handleEditCategory = (transaction: Transaction) => {
     setEditingTransaction(transaction);
     setSelectedCategoryId(transaction.categoryId?.toString() || "");
+    setCategorySearchText(""); // Limpar busca ao abrir
+  };
+
+  // --- Função para agrupar e filtrar categorias ---
+  const getGroupedAndFilteredCategories = () => {
+    if (!categories) return [];
+    
+    // Filtrar por texto de busca
+    const filtered = categories.filter((cat) => {
+      const fullName = cat.subcategory ? `${cat.name} ${cat.subcategory}` : cat.name;
+      return fullName.toLowerCase().includes(categorySearchText.toLowerCase());
+    });
+
+    // Agrupar por categoria principal
+    const grouped = new Map<string, typeof categories>();
+    filtered.forEach((cat) => {
+      const key = cat.name;
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
+      }
+      grouped.get(key)!.push(cat);
+    });
+
+    return Array.from(grouped.entries())
+      .sort(([nameA], [nameB]) => nameA.localeCompare(nameB))
+      .map(([name, cats]) => ({ name, categories: cats }));
   };
 
   const handleSaveCategory = () => {
@@ -605,7 +632,7 @@ export default function Transactions() {
 
         {/* Dialog Modal para Editar Categoria */}
         <Dialog open={!!editingTransaction} onOpenChange={(open) => !open && setEditingTransaction(null)}>
-          <DialogContent className="sm:max-w-md !fixed !top-1/2 !left-1/2 !transform !-translate-x-1/2 !-translate-y-1/2 !z-50" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 9999 }}>
+          <DialogContent className="sm:max-w-md !fixed !top-1/2 !left-1/2 !transform !-translate-x-1/2 !-translate-y-1/2 !z-50 max-h-[80vh] overflow-y-auto" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 9999 }}>
             <DialogHeader>
               <DialogTitle>Editar Categoria</DialogTitle>
               <DialogDescription>
@@ -614,19 +641,57 @@ export default function Transactions() {
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="category-select">Selecione uma categoria</Label>
-                <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
-                  <SelectTrigger id="category-select">
-                    <SelectValue placeholder="Selecione uma categoria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories?.map((category) => (
-                      <SelectItem key={category.id} value={category.id.toString()}>
-                        {category.subcategory ? `${category.name} > ${category.subcategory}` : category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="category-search">Buscar categoria</Label>
+                <Input
+                  id="category-search"
+                  placeholder="Digite para filtrar (ex: SAÚDE, MÉDICO)..."
+                  value={categorySearchText}
+                  onChange={(e) => setCategorySearchText(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Selecione uma categoria</Label>
+                <div className="border rounded-lg bg-white max-h-64 overflow-y-auto">
+                  {getGroupedAndFilteredCategories().length === 0 ? (
+                    <div className="p-4 text-center text-sm text-muted-foreground">
+                      Nenhuma categoria encontrada
+                    </div>
+                  ) : (
+                    <div className="space-y-1 p-2">
+                      {getGroupedAndFilteredCategories().map((group) => (
+                        <div key={group.name}>
+                          {/* Cabeçalho do grupo */}
+                          {group.categories.length > 0 && (
+                            <div className="px-3 py-1 text-xs font-semibold text-gray-600 bg-gray-50 sticky top-0">
+                              {group.name}
+                            </div>
+                          )}
+                          {/* Itens do grupo */}
+                          {group.categories.map((category) => (
+                            <button
+                              key={category.id}
+                              onClick={() => setSelectedCategoryId(category.id.toString())}
+                              className={`w-full text-left px-4 py-2 text-sm rounded transition-colors ${
+                                selectedCategoryId === category.id.toString()
+                                  ? "bg-blue-500 text-white"
+                                  : "hover:bg-gray-100"
+                              }`}
+                            >
+                              {category.subcategory ? (
+                                <div>
+                                  <div className="font-medium">{category.subcategory}</div>
+                                </div>
+                              ) : (
+                                <div className="font-medium">{category.name}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex gap-2 justify-end">
                 <Button

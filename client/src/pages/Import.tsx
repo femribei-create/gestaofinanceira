@@ -266,54 +266,93 @@ export default function Import() {
               </CardHeader>
               <CardContent className="space-y-3 max-h-96 overflow-y-auto">
                 {uploadResult.transactions?.map((transaction: any, index: number) => (
-                  <div
-                    key={index}
-                    className={`p-3 border rounded-lg ${
-                      transaction.isDuplicate ? "bg-yellow-50 border-yellow-200" : "bg-gray-50"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{transaction.description}</div>
-                        <div className="text-sm text-gray-600">
-                          {format(new Date(transaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })}
+                  <div key={index} className="space-y-2">
+                    {/* Transação Nova */}
+                    <div
+                      className={`p-3 border rounded-lg ${
+                        transaction.isDuplicate ? "bg-yellow-50 border-yellow-200" : "bg-gray-50"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold text-gray-600 mb-1">
+                            {transaction.isDuplicate ? "🔄 NOVA (Possível Duplicata)" : "✨ Nova Transação"}
+                          </div>
+                          <div className="font-medium truncate">{transaction.description}</div>
+                          <div className="text-sm text-gray-600">
+                            {format(new Date(transaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })}
+                          </div>
+                          {transaction.isInstallment && (
+                            <div className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded inline-block mt-1">
+                              Parcela {transaction.installmentNumber}/{transaction.installmentTotal}
+                            </div>
+                          )}
                         </div>
-                        {transaction.isInstallment && (
-                          <div className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded inline-block mt-1">
-                            Parcela {transaction.installmentNumber}/{transaction.installmentTotal}
+                        <div className="text-right">
+                          <div className={`font-semibold ${
+                            transaction.transactionType === "income" ? "text-green-600" : "text-red-600"
+                          }`}>
+                            {transaction.transactionType === "income" ? "+" : "-"}
+                            {new Intl.NumberFormat("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            }).format(transaction.amount / 100)}
+                          </div>
+                        </div>
+                        {transaction.isDuplicate && (
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant={duplicateActions[index] === 'approve' ? "default" : "outline"}
+                              onClick={() => handleDuplicateAction(index, 'approve')}
+                              title="Importar mesmo assim (manter ambas)"
+                            >
+                              <Check className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={duplicateActions[index] === 'reject' ? "destructive" : "outline"}
+                              onClick={() => handleDuplicateAction(index, 'reject')}
+                              title="Descartar (não importar)"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
                           </div>
                         )}
                       </div>
-                      <div className="text-right">
-                        <div className={`font-semibold ${
-                          transaction.transactionType === "income" ? "text-green-600" : "text-red-600"
-                        }`}>
-                          {transaction.transactionType === "income" ? "+" : "-"}
-                          {new Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(transaction.amount / 100)}
+                    </div>
+
+                    {/* Transação Original (se for duplicata) */}
+                    {transaction.isDuplicate && transaction.duplicateInfo?.existingTransaction && (
+                      <div className="p-3 border-2 border-yellow-300 rounded-lg bg-yellow-50 ml-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-semibold text-yellow-700 mb-1">
+                              📋 ORIGINAL (no sistema)
+                            </div>
+                            <div className="font-medium truncate">{transaction.duplicateInfo.existingTransaction.description}</div>
+                            <div className="text-sm text-gray-600">
+                              {format(new Date(transaction.duplicateInfo.existingTransaction.purchaseDate), "dd/MM/yyyy", { locale: ptBR })}
+                            </div>
+                            <div className="text-xs text-yellow-700 mt-1 font-medium">
+                              Tipo: {transaction.duplicateInfo.type === 'exact' ? 'Correspondência Exata' : 'Correspondência Fuzzy'}
+                              {transaction.duplicateInfo.similarity && ` (${(transaction.duplicateInfo.similarity * 100).toFixed(0)}% semelhança)`}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`font-semibold ${
+                              transaction.duplicateInfo.existingTransaction.transactionType === "income" ? "text-green-600" : "text-red-600"
+                            }`}>
+                              {transaction.duplicateInfo.existingTransaction.transactionType === "income" ? "+" : "-"}
+                              {new Intl.NumberFormat("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              }).format(transaction.duplicateInfo.existingTransaction.amount / 100)}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      {transaction.isDuplicate && (
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant={duplicateActions[index] === 'approve' ? "default" : "outline"}
-                            onClick={() => handleDuplicateAction(index, 'approve')}
-                          >
-                            <Check className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={duplicateActions[index] === 'reject' ? "destructive" : "outline"}
-                            onClick={() => handleDuplicateAction(index, 'reject')}
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 ))}
               </CardContent>

@@ -256,8 +256,8 @@ export const importRouter = router({
             accountId: input.accountId,
             categoryId: trx.categoryId,
             description: trx.description,
-            // Garante sinal correto: Despesa é negativo, Receita é positivo
-            amount: trx.transactionType === "expense" ? -Math.abs(trx.amount) : Math.abs(trx.amount),
+            // Valores são armazenados como positivos, sinal vem do tipo de transação
+            amount: Math.abs(trx.amount),
             transactionType: trx.transactionType,
             purchaseDate: new Date(trx.purchaseDate),
             paymentDate: correctPaymentDate,

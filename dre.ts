@@ -120,7 +120,8 @@ async function calculateDREMonth(
       category.name,
       transaction.transactionType
     );
-    const amount = Math.abs(transaction.amount);
+    // Converter centavos para reais
+    const amount = Math.abs(transaction.amount) / 100;
 
     if (categoryType === "revenue") {
       revenues.set(

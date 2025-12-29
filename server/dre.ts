@@ -231,7 +231,8 @@ async function calculateDREMonth(
       categoryName,
       transaction.transactionType
     );
-    const amount = Math.abs(transaction.amount);
+    // Converter centavos para reais
+    const amount = Math.abs(transaction.amount) / 100;
 
     // Ignorar transações que devem ser ignoradas
     if (categoryType === "ignore") {
