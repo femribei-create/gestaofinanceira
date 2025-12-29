@@ -266,7 +266,8 @@ export function parseCardCSV(content: string, fileName: string): ParseResult {
           finalPurchaseDate = originalPurchaseDate;
         }
         
-        const transactionType = amount >= 0 ? "income" : "expense";
+        // Cartões são sempre despesas
+        const transactionType = "expense";
         
         transactions.push({
           description: installmentInfo.cleanDescription,
