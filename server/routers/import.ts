@@ -6,7 +6,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { parseFile, parseRevenueCSV, type ParsedTransaction } from "../parsers";
 import { detectDuplicatesBatch, getDuplicateStats } from "../duplicateDetection";
-import { classifyTransactionsBatch } from "../classification";
+import { classifyTransactionsBatch, classifyByHistory } from "../classification";
 import {
   getUserAccounts,
   getUserCategories,
@@ -122,30 +122,58 @@ export const importRouter = router({
       const accounts = await getUserAccounts(userId);
       const currentAccount = accounts.find(acc => acc.id === input.accountId);
       
-      // Classificar transações (Usando a lista limpa)
-      const classifications = await classifyTransactionsBatch(
-        userId,
-        cleanTransactions,
-        input.accountId,
-        rules,
-        categories
-      );
+      // Verificar se é Cartão Master ou Cartão Visa - usar APENAS similaridade
+      const isCardAccount = currentAccount?.name.toLowerCase().includes('master') || 
+                            currentAccount?.name.toLowerCase().includes('visa');
       
-      // Aplicar regras específicas por conta
-      if (currentAccount?.name.toLowerCase().includes('sangria')) {
-        // Todas as transações do Sangria devem ser PIX DESAPEGO
-        const pixDesapegoCategory = categories.find(cat => 
-          cat.name.toUpperCase() === 'PIX DESAPEGO'
+      // Classificar transações
+      let classifications;
+      if (isCardAccount) {
+        // Para cartões Master/Visa, usar APENAS classificação por histórico (similaridade)
+        classifications = await Promise.all(
+          cleanTransactions.map(async (trx) => {
+            const result = await classifyByHistory(userId, trx.description);
+            if (result) {
+              return {
+                categoryId: result.categoryId,
+                method: result.method,
+                confidence: result.confidence,
+                suggestedCategoryId: result.categoryId,
+              };
+            }
+            return {
+              categoryId: null,
+              method: null,
+              confidence: 0,
+              suggestedCategoryId: null,
+            };
+          })
+        );
+      } else {
+        classifications = await classifyTransactionsBatch(
+          userId,
+          cleanTransactions,
+          input.accountId,
+          rules,
+          categories
         );
         
-        if (pixDesapegoCategory) {
-          classifications.forEach((classification, index) => {
-            classifications[index] = {
-              categoryId: pixDesapegoCategory.id,
-              method: "rule",
-              confidence: 100,
-            };
-          });
+        // Aplicar regras específicas por conta
+        if (currentAccount?.name.toLowerCase().includes('sangria')) {
+          // Todas as transações do Sangria devem ser PIX DESAPEGO
+          const pixDesapegoCategory = categories.find(cat => 
+            cat.name.toUpperCase() === 'PIX DESAPEGO'
+          );
+          
+          if (pixDesapegoCategory) {
+            classifications.forEach((classification, index) => {
+              classifications[index] = {
+                categoryId: pixDesapegoCategory.id,
+                method: "rule",
+                confidence: 100,
+              };
+            });
+          }
         }
       }
       

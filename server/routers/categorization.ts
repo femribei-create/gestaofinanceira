@@ -8,6 +8,7 @@ import {
   createOrUpdateRule,
   deleteRule,
   deleteHistoryPattern,
+  updateHistoryPattern,
   normalizarSinal,
 } from "../categorization.engine";
 
@@ -184,5 +185,33 @@ export const categorizationRouter = router({
       
       await deleteHistoryPattern(input.patternId);
       return { success: true };
+    }),
+
+  /**
+   * Editar padrão aprendido
+   */
+  updateHistoryPattern: protectedProcedure
+    .input(
+      z.object({
+        patternId: z.number(),
+        newDescription: z.string().min(1, "Description cannot be empty"),
+        newCategoryId: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user) throw new Error("User not authenticated");
+      
+      try {
+        await updateHistoryPattern(
+          ctx.user.id,
+          input.patternId,
+          input.newDescription,
+          input.newCategoryId
+        );
+        return { success: true };
+      } catch (error) {
+        console.error("[Categorization] Erro ao atualizar padrão:", error);
+        throw error;
+      }
     }),
 });

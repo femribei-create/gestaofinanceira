@@ -91,15 +91,20 @@ export async function classifyByHistory(
   description: string
 ): Promise<ClassificationResult | null> {
   const history = await getClassificationHistory(userId, description);
-  
-  if (history.length === 0) {
+
+  if (!history || history.length === 0) {
     return null;
   }
-  
+
+  // Pega o mais similar (primeiro item já vem ordenado por similaridade desc)
   const best = history[0]!;
-  const totalCount = history.reduce((sum, h) => sum + h.count, 0);
-  const confidence = Math.round((best.count / totalCount) * 100);
-  
+  const confidence = Math.round((best.similarity ?? 0) * 100);
+
+  // Threshold mínimo de confiança: 70%
+  if (confidence < 70) {
+    return null;
+  }
+
   return {
     categoryId: best.categoryId,
     method: "history",

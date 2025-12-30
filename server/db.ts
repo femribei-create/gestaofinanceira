@@ -1,5 +1,6 @@
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { compareTwoStrings } from "string-similarity";
 import {
   users,
   accounts,
@@ -59,7 +60,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!db) return;
 
   const values: InsertUser = { openId: user.openId };
-  const updateSet: any = {};
+  const updateSet: Partial<InsertUser> = {};
 
   if (user.name) { values.name = user.name; updateSet.name = user.name; }
   if (user.email) { values.email = user.email; updateSet.email = user.email; }
@@ -151,7 +152,8 @@ export async function updateCategory(
   const category = currentCategory[0];
 
   // Atualizar a categoria
-  await db.update(categories).set({ ...updates, updatedAt: new Date() }).where(eq(categories.id, categoryId));
+  // Tabela categories não possui coluna updatedAt no schema; atualize apenas os campos fornecidos
+  await db.update(categories).set({ ...updates }).where(eq(categories.id, categoryId));
 
   // Se o nome foi alterado, atualizar todas as transações que usam essa categoria
   if (updates.name && updates.name !== category.name) {
@@ -328,11 +330,34 @@ export async function upsertClassificationHistory(userId: number, description: s
     .onDuplicateKeyUpdate({ set: { count: sql`count + 1`, lastUsed: new Date() } });
 }
 
-export async function getClassificationHistory(userId: number, description: string): Promise<{ categoryId: number; count: number }[]> {
+export async function getClassificationHistory(
+  userId: number,
+  description: string,
+  threshold = 0.85
+): Promise<{ categoryId: number; count: number; similarity: number }[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select({ categoryId: classificationHistory.categoryId, count: classificationHistory.count })
-    .from(classificationHistory).where(and(eq(classificationHistory.userId, userId), sql`${classificationHistory.description} LIKE ${`%${description}%`}`)).orderBy(desc(classificationHistory.count));
+
+  // Buscar todo o histórico do usuário
+  const history = await db
+    .select({ categoryId: classificationHistory.categoryId, count: classificationHistory.count, description: classificationHistory.description })
+    .from(classificationHistory)
+    .where(eq(classificationHistory.userId, userId));
+
+  // Calcular similaridade e filtrar pelo threshold
+  const scored = history
+    .map((item) => {
+      const similarity = compareTwoStrings(description, item.description || "");
+      return { ...item, similarity };
+    })
+    .filter((item) => item.similarity >= threshold)
+    .sort((a, b) => {
+      if (b.similarity !== a.similarity) return b.similarity - a.similarity;
+      return (b.count ?? 0) - (a.count ?? 0);
+    })
+    .map(({ categoryId, count, similarity }) => ({ categoryId, count, similarity }));
+
+  return scored;
 }
 
 export async function upsertMonthlyGoal(goal: InsertMonthlyGoal): Promise<void> {
@@ -350,7 +375,25 @@ export async function getMonthlyGoals(userId: number, year: number, month: numbe
 export async function upsertRevenueData(data: InsertRevenueData): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.insert(revenueData).values(data).onDuplicateKeyUpdate({ set: { revenue: data.revenue, updatedAt: new Date() } });
+  // Atualiza apenas colunas válidas conforme schema de revenueData
+  await db
+    .insert(revenueData)
+    .values(data)
+    .onDuplicateKeyUpdate({
+      set: {
+        creditCash: data.creditCash,
+        credit2x: data.credit2x,
+        credit3x: data.credit3x,
+        credit4x: data.credit4x,
+        credit5x: data.credit5x,
+        credit6x: data.credit6x,
+        debit: data.debit,
+        cash: data.cash,
+        pix: data.pix,
+        giraCredit: data.giraCredit,
+        updatedAt: new Date(),
+      },
+    });
 }
 
 export async function getRevenueData(userId: number, year: number, month: number): Promise<RevenueData[]> {

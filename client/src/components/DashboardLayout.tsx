@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, PanelLeft, FileText, Upload, Settings, TrendingUp, Plus, Calendar, Layers, Wallet } from "lucide-react";
+import { LayoutDashboard, PanelLeft, FileText, Upload, Settings, TrendingUp, Plus, Calendar, Layers, Wallet, BookOpen } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
@@ -24,6 +24,7 @@ const menuItems = [
   { icon: FileText, label: "Transações", path: "/transactions" },
   { icon: Layers, label: "Gerenciar Categorias", path: "/categories" },
   { icon: Settings, label: "Categorização", path: "/categorization" },
+  { icon: BookOpen, label: "Histórico de Aprendizado", path: "/learning-history" },
   { icon: Calendar, label: "Datas de Fechamento", path: "/card-closing-dates" },
   { icon: Wallet, label: "Gastos Pessoais", path: "/personal-dashboard" },
   { icon: TrendingUp, label: "DRE Mensal", path: "/dre" },

@@ -14,6 +14,7 @@ import AddTransaction from "./pages/AddTransaction";
 import CardClosingDates from "./pages/CardClosingDates";
 import PersonalDashboard from "./pages/PersonalDashboard";
 import CategoriesManagement from "./pages/CategoriesManagement";
+import LearningHistory from "./pages/LearningHistory";
 import { trpc } from "./lib/trpc";
 import { useEffect } from "react";
 
@@ -55,6 +56,7 @@ function Router() {
       <Route path={"/"} component={Home} />
       <Route path={"/categorization"} component={Categorization} />
       <Route path={"/categories"} component={CategoriesManagement} />
+      <Route path={"/learning-history"} component={LearningHistory} />
       <Route path={"/transactions"} component={Transactions} />
       <Route path={"/dre"} component={DRE} />
       <Route path={"/import"} component={Import} />

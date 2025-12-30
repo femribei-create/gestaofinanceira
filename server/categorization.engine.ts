@@ -85,6 +85,68 @@ export async function deleteHistoryPattern(patternId: number) {
   await db.delete(classificationHistory).where(eq(classificationHistory.id, patternId));
 }
 
+/**
+ * Atualizar um padrão de aprendizado existente
+ * Permite editar a descrição e a categoria associada a um padrão de histórico
+ * 
+ * @param userId - ID do usuário (validação de propriedade)
+ * @param patternId - ID do padrão a ser atualizado
+ * @param newDescription - Nova descrição do padrão
+ * @param newCategoryId - Novo ID da categoria
+ * @throws Error se o padrão não existir ou não pertencer ao usuário
+ */
+export async function updateHistoryPattern(
+  userId: number,
+  patternId: number,
+  newDescription: string,
+  newCategoryId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Validar que o padrão existe e pertence ao usuário
+  const existingPattern = await db
+    .select()
+    .from(classificationHistory)
+    .where(
+      and(
+        eq(classificationHistory.id, patternId),
+        eq(classificationHistory.userId, userId)
+      )
+    )
+    .limit(1);
+
+  if (!existingPattern || existingPattern.length === 0) {
+    throw new Error("History pattern not found or does not belong to user");
+  }
+
+  // Validar que a categoria existe e pertence ao usuário
+  const categoryExists = await db
+    .select()
+    .from(categories)
+    .where(
+      and(
+        eq(categories.id, newCategoryId),
+        eq(categories.userId, userId)
+      )
+    )
+    .limit(1);
+
+  if (!categoryExists || categoryExists.length === 0) {
+    throw new Error("Category not found or does not belong to user");
+  }
+
+  // Atualizar o padrão
+  await db
+    .update(classificationHistory)
+    .set({
+      description: newDescription,
+      categoryId: newCategoryId,
+      lastUsed: new Date(),
+    })
+    .where(eq(classificationHistory.id, patternId));
+}
+
 export async function getUserLearningHistory(userId: number) {
   const db = await getDb();
   if (!db) return [];
